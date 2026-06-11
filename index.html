@@ -1081,13 +1081,13 @@
                     {/* RIGHT SLOT: VERTICAL BULL BUTTONS (COL-SPAN-3) */}
                     <div className="col-span-3 flex flex-col justify-between gap-2 self-stretch">
                       
-                      {/* OUT BULL */}
+                      {/* OUT BULL - 輪っかの〇に変更 */}
                       <button 
                         onClick={() => handleKeypadTap(25, 1, 'outer')} 
                         className="flex-1 rounded-xl font-mono font-black uppercase border flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 border-emerald-900/70 text-emerald-400 hover:bg-emerald-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)]"
                         title={bullType === 'fat' ? "アウターブル(50点)" : "アウターブル(25点)"}
                       >
-                        <span className="text-3xl">🟢</span>
+                        <span className="text-4xl leading-none font-black text-emerald-400">○</span>
                         <span className="leading-tight text-xs font-black tracking-tight">OUT<br/>BULL</span>
                         <span className="text-base font-black text-zinc-200">{bullType === 'fat' ? "50" : "25"}</span>
                       </button>
