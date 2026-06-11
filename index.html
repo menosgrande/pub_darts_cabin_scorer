@@ -5,14 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Pub Darts Cabin Scorer</title>
 
-    <!-- React 18 CDN -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 
-    <!-- Babel for JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Tailwind CSS v3 CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
@@ -62,7 +59,7 @@
         151: "T20 - T17 - D20",
         150: "T20 - T18 - D18",
         149: "T20 - T19 - D16",
-        148: "T20 - T16 - D20",
+        148: "T20 - S16 - D20",
         147: "T20 - T17 - D18",
         146: "T20 - T18 - D16",
         145: "T20 - T15 - D20",
@@ -391,6 +388,16 @@
 
           const rBullseye = 8.5, rOuterBull = 22, rTripleInner = 90, rTripleOuter = 112, rDoubleInner = 154, rDoubleOuter = 176, rOutOfBoard = 195;
 
+          if (radius <= rBullseye) {
+            return bullType === 'fat' 
+              ? { score: 50, multiplier: 1, x, y, label: "Bull(50)", isBull: true }
+              : { score: 50, multiplier: 2, x, y, label: "D-Bull", isBull: true };
+          } else if (radius <= rOuterBull) {
+            return bullType === 'fat'
+              ? { score: 50, multiplier: 1, x, y, label: "Bull(50)", isBull: true }
+              : { score: 25, multiplier: 1, x, y, label: "S-Bull(25)", isBull: true };
+          }
+
           let degrees = radians * (180 / Math.PI);
           let deg = (degrees + 360) % 360;
           let adjustedDeg = (deg + 90 + 9) % 360;
@@ -399,15 +406,7 @@
 
           let score = scoreNum, multiplier = 1, label = `${score}`;
 
-          if (radius <= rBullseye) {
-            score = 50; multiplier = 1; label = "Bull(50)";
-            if (bullType !== 'fat') { multiplier = 2; label = "D-Bull"; }
-            else { multiplier = 1; label = "Bull(50)"; }
-          } else if (radius <= rOuterBull) {
-            score = 50; multiplier = 1;
-            label = bullType === 'fat' ? "Bull(50)" : "S-Bull(25)";
-            if (bullType !== 'fat') score = 25;
-          } else if (radius >= rTripleInner && radius <= rTripleOuter) {
+          if (radius >= rTripleInner && radius <= rTripleOuter) {
             multiplier = 3; label = `T${scoreNum}`;
           } else if (radius >= rDoubleInner && radius <= rDoubleOuter) {
             multiplier = 2; label = `D${scoreNum}`;
@@ -423,15 +422,28 @@
         const getSubtotal = (throws) => throws.reduce((acc, t) => acc + (t.score * t.multiplier), 0);
 
         const checkIsBust = (remaining, throws) => {
-          const sub = getSubtotal(throws);
-          const difference = remaining - sub;
-          if (difference < 0) return true;
-          if (difference === 1 && (outMode === 'double' || outMode === 'master')) return true;
-          if (difference === 0) {
-            const last = throws[throws.length - 1];
-            if (!last) return false;
-            if (outMode === 'double' && last.multiplier !== 2) return true;
-            if (outMode === 'master' && last.multiplier !== 2 && last.multiplier !== 3) return true;
+          let currentRemaining = remaining;
+          
+          for (let i = 0; i < throws.length; i++) {
+            const t = throws[i];
+            const hitScore = t.score * t.multiplier;
+            currentRemaining -= hitScore;
+
+            if (currentRemaining < 0) return true;
+            if (currentRemaining === 1 && (outMode === 'double' || outMode === 'master')) return true;
+            if (currentRemaining === 0) {
+              // 最終スロー以外で0になった場合もその時点で判定
+              if (outMode === 'double') {
+                // ダブルアウト：通常ダブル、またはセパレート時のインナーブル(50点/倍率2)
+                if (t.multiplier !== 2) return true;
+              } else if (outMode === 'master') {
+                // マスターアウト：トリプル、ダブル、またはブル(ファット時の50点Bull、セパレート時の25点/50点BullすべてOK)
+                const isBullHit = t.isBull || t.label.includes("Bull");
+                if (t.multiplier !== 2 && t.multiplier !== 3 && !isBullHit) return true;
+              }
+              // 途中でクリーンに上がれた場合は残りのスローがあってもBustではない（確定処理へ）
+              if (i < throws.length - 1) return false;
+            }
           }
           return false;
         };
@@ -460,18 +472,22 @@
           let activeMult = specifiedMult !== undefined ? specifiedMult : padMultiplier;
           let finalMult = activeMult;
           let label = "";
+          let isBull = false;
 
           if (score === 25) {
-            if (isBullType === 'inner') {
+            isBull = true;
+            if (isBullType === 'inner' || activeMult === 2) {
               if (bullType === 'fat') {
                 score = 50; finalMult = 1; label = "Bull(50)";
               } else {
                 score = 50; finalMult = 2; label = "D-Bull";
               }
             } else {
-              score = bullType === 'fat' ? 50 : 25;
-              finalMult = 1;
-              label = bullType === 'fat' ? "Bull(50)" : "S-Bull(25)";
+              if (bullType === 'fat') {
+                score = 50; finalMult = 1; label = "Bull(50)";
+              } else {
+                score = 25; finalMult = 1; label = "S-Bull(25)";
+              }
             }
           } else if (score === 0) {
             finalMult = 0;
@@ -481,18 +497,21 @@
           }
 
           let rx = 0, ry = 0;
-          if (score > 0) {
-            const distance = (score === 25 || score === 50) 
-              ? (finalMult === 2 ? 5 : 15) 
-              : finalMult === 3 ? 101 : finalMult === 2 ? 165 : 133;
-            const targetIndexNum = (score === 25 || score === 50) ? 20 : score;
-            const idx = targetIndexNum === 20 && (score === 25 || score === 50) ? 0 : WEDGES.indexOf(targetIndexNum);
+          if (isBull) {
+            // ブルの場合は中央座標付近にランダムあるいは固定配置（Wedges検索のバグ回避）
+            const distance = (label === "D-Bull" || isBullType === 'inner') ? 4 : 14;
+            const angleRad = Math.random() * Math.PI * 2;
+            rx = Math.round(distance * Math.cos(angleRad));
+            ry = Math.round(distance * Math.sin(angleRad));
+          } else if (score > 0) {
+            const distance = finalMult === 3 ? 101 : finalMult === 2 ? 165 : 133;
+            const idx = WEDGES.indexOf(score);
             const angleRad = (idx * 18 - 90) * (Math.PI / 180);
             rx = Math.round(distance * Math.cos(angleRad));
             ry = Math.round(distance * Math.sin(angleRad));
           }
 
-          const newThrow = { score, multiplier: finalMult, x: rx, y: ry, label };
+          const newThrow = { score, multiplier: finalMult, x: rx, y: ry, label, isBull };
           let nextThrows = [...currentThrows];
 
           if (editingThrowIndex !== null) {
@@ -509,7 +528,7 @@
             setCurrentThrows(nextThrows);
             const isBust = checkIsBust(activePlayer.remainingScore, nextThrows);
             setIsRoundBurst(isBust);
-            playSound(finalMult === 3 ? 'hit-triple' : finalMult === 2 ? 'hit-double' : (score === 25 || score === 50) ? 'hit-bull' : 'hit-single');
+            playSound(finalMult === 3 ? 'hit-triple' : finalMult === 2 ? 'hit-double' : isBull ? 'hit-bull' : 'hit-single');
             if (isBust) playSound('burst');
           }
         };
@@ -527,7 +546,7 @@
           const normY = (e.clientY - centerY) / scale;
 
           const computedThrow = getThrowFromCoords(normX, normY);
-          playSound(computedThrow.multiplier === 3 ? 'hit-triple' : computedThrow.multiplier === 2 ? 'hit-double' : 'hit-single');
+          playSound(computedThrow.multiplier === 3 ? 'hit-triple' : computedThrow.multiplier === 2 ? 'hit-double' : (computedThrow.isBull || computedThrow.label.includes("Bull")) ? 'hit-bull' : 'hit-single');
 
           let nextThrows = [...currentThrows];
           if (editingThrowIndex !== null) {
@@ -555,7 +574,6 @@
 
         const handleFlushRound = () => {
           playSound('revert');
-          // 確定後・交代前にリセットした場合はスナップショットから点数も戻す
           if (confirmStage === 'next') {
             const previousState = turnHistoryState[turnHistoryState.length - 1];
             if (previousState) {
@@ -635,22 +653,20 @@
           }
         };
 
-        // confirmStage === 'next' のときは得点確定済みなので投擲分を引かない
         const currentActiveRemaining = confirmStage === 'next'
           ? activePlayer.remainingScore
           : activePlayer.remainingScore - (isRoundBurst ? 0 : getSubtotal(currentThrows));
 
-        // Fliqlo調のパタパタ時計フリップボードパーツ
         const renderFliqloTile = (score, isActive, isBust) => {
           const digits = score === 0 ? 1 : String(score).length;
           const sizeClass = digits <= 2
             ? 'text-6xl sm:text-7xl md:text-8xl'
             : 'text-4xl sm:text-5xl md:text-6xl';
           return (
-            <div className={`relative flex flex-col items-center justify-center rounded-2xl md:rounded-3xl bg-[#121215] border border-zinc-800/80 px-3 py-3 md:py-5 select-none transition-all duration-300 overflow-hidden ${
+            <div className={`relative flex flex-col items-center justify-center rounded-2xl md:rounded-3xl bg-[#121215] border border-zinc-800 px-3 py-3 md:py-5 select-none transition-all duration-300 overflow-hidden ${
               isActive 
                 ? 'shadow-[0_0_35px_rgba(245,158,11,0.25)] ring-2 ring-amber-500/50' 
-                : 'shadow-[0_15px_30px_rgba(0,0,0,0.8)] opacity-55'
+                : 'shadow-[0_15px_30px_rgba(0,0,0,0.8)]'
             }`}>
               
               {/* パタパタ時計特有の中央の分割スリット（水平線） */}
@@ -669,7 +685,6 @@
           );
         };
 
-        // アレンジのルートをカラーコード化したスパンに変換するヘルパー
         const renderArrangementTokens = (arrStr) => {
           if (!arrStr || arrStr.includes("No finish") || arrStr.includes("BOGEY") || arrStr.includes("No checkout")) {
             return <span className="text-zinc-500 font-mono text-[11px] md:text-sm font-bold tracking-widest">{arrStr || "No checkout"}</span>;
@@ -681,12 +696,12 @@
                 let badgeColor = "text-white";
                 if (tok.startsWith("T")) {
                   badgeColor = "text-emerald-400 font-extrabold drop-shadow-[0_0_6px_rgba(52,211,153,0.3)]";
-                } else if (tok.startsWith("D")) {
+                } else if (tok.startsWith("D") || tok.includes("Bull")) {
                   badgeColor = "text-rose-500 font-extrabold drop-shadow-[0_0_6px_rgba(244,63,94,0.3)]";
                 }
                 return (
                   <React.Fragment key={idx}>
-                    {idx > 0 && <span className="text-zinc-655 font-sans font-normal">-</span>}
+                    {idx > 0 && <span className="text-zinc-500 font-sans font-normal">-</span>}
                     <span className={badgeColor}>{tok}</span>
                   </React.Fragment>
                 );
@@ -697,7 +712,6 @@
 
         return (
           <div className="min-h-[100dvh] w-full bg-[#050508] text-amber-100 flex flex-col justify-between select-none antialiased overflow-y-auto font-sans relative pb-8">
-            {/* シックな背景 */}
             <div className="fixed inset-0 bg-gradient-to-b from-zinc-950 via-[#0a0a0f] to-[#040406] z-0 pointer-events-none" />
 
             {/* HEADER */}
@@ -735,7 +749,6 @@
                 <div className="fixed inset-0 z-40 bg-black/95 backdrop-blur-md flex items-end sm:items-center justify-center">
                   <div className="w-full max-w-sm bg-[#0d0d12] border border-zinc-800 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
                     
-                    {/* ヘッダー */}
                     <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-zinc-800/60">
                       <div>
                         <h2 className="text-sm font-black tracking-widest text-amber-400 uppercase leading-none">🎯 GAME SETUP</h2>
@@ -749,8 +762,6 @@
                     </div>
 
                     <div className="p-4 space-y-4">
-
-                      {/* プレイヤー名 + スコア（一体型グリッド） */}
                       <div className="grid grid-cols-2 gap-2">
                         {[0, 1].map(i => (
                           <div key={i} className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-3 space-y-2">
@@ -780,7 +791,6 @@
                         ))}
                       </div>
 
-                      {/* プリセット */}
                       <div className="grid grid-cols-3 gap-2">
                         {[301, 501, 701].map(score => (
                           <button key={score} onClick={() => { playSound('click'); setP1StartScore(score); setP2StartScore(score); }}
@@ -790,7 +800,6 @@
                         ))}
                       </div>
 
-                      {/* ブル設定 + アウトルール（2行） */}
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-zinc-500 font-bold w-16 shrink-0">BULL</span>
@@ -816,7 +825,6 @@
                         </div>
                       </div>
 
-                      {/* 開始ボタン — ゲーム中なら確認ダイアログを挟む */}
                       {showQuitConfirm ? (
                         <div className="space-y-2">
                           <p className="text-center text-xs font-bold text-rose-400 bg-rose-950/40 border border-rose-900/50 rounded-xl py-3 px-2">
@@ -845,7 +853,6 @@
                           対戦開始 START 🎯
                         </button>
                       )}
-
                     </div>
                   </div>
                 </div>
@@ -854,7 +861,7 @@
               {/* GAME VIEWPORT */}
               <div className="flex-grow flex flex-col justify-center items-center min-h-0 w-full lg:max-w-xl">
                 
-                {/* 1. リアルタイム・アレンジ・ディスプレイ (コックピット上部) */}
+                {/* 1. リアルタイム・アレンジ・ディスプレイ */}
                 <div className="w-full text-center py-1 shrink-0 z-20">
                   <div className="text-[8px] font-mono font-black text-zinc-500 tracking-widest mb-1 uppercase">ARRANGE ROUTE</div>
                   <div className="min-h-10 flex items-center justify-center bg-[#09090c]/85 border border-zinc-800 px-4 py-2 rounded-xl max-w-xs mx-auto shadow-inner">
@@ -866,10 +873,10 @@
                   </div>
                 </div>
 
-                {/* 2. OVERLAPPED PLAYERS' SCORES AND CENTRAL BOARD (ダーツ盤とFliqloの3D立体配置) */}
+                {/* 2. PLAYERS' SCORES AND CENTRAL BOARD */}
                 <div className="w-full flex items-center justify-center relative my-auto py-1.5 md:py-3 select-none">
                   
-                  {/* PLAYER 1 FLIQLO BOX (LEFT SIDE - BEHIND BOARD) */}
+                  {/* PLAYER 1 BOX (LEFT SIDE) */}
                   <div className="absolute left-0 w-[42%] z-10 transition-transform duration-300">
                     <div className="text-left pl-2 mb-1.5 flex items-center justify-between">
                       <span className="text-[9px] md:text-xs font-black text-zinc-400 block tracking-widest truncate max-w-[70px] uppercase">{players[0].name}</span>
@@ -887,11 +894,11 @@
                           players[0].history.map((h, idx) => (
                             <div key={idx} className={`flex items-center justify-between px-2 py-1 border-b border-zinc-900/50 last:border-0 ${h.isBurst ? 'opacity-40' : ''}`}>
                               <span className="text-[8px] font-bold text-zinc-600 w-5 shrink-0">R{h.roundNum}</span>
-                              <span className={`text-[8px] font-mono flex-1 text-center truncate ${h.isBurst ? 'text-rose-500 line-through' : 'text-zinc-400'}`}>
+                              <span className={`text-[8px] font-mono flex-1 text-center truncate px-1 ${h.isBurst ? 'text-rose-500 line-through' : 'text-zinc-400'}`}>
                                 {h.throws.map(t => t.label).join(' · ')}
                               </span>
-                              <span className={`text-[9px] font-black w-6 text-right shrink-0 ${h.isBurst ? 'text-rose-500' : 'text-amber-400'}`}>
-                                {h.isBurst ? 'B' : h.roundScore}
+                              <span className={`text-[9px] font-black w-12 text-right shrink-0 ${h.isBurst ? 'text-rose-500' : 'text-amber-400'}`}>
+                                {h.isBurst ? 'BURST' : h.roundScore}
                               </span>
                             </div>
                           ))
@@ -900,10 +907,9 @@
                     </div>
                   </div>
 
-                  {/* CENTRAL DARTBOARD (FOREGROUND z-20 WITH OVERLAPPING NEGATIVE MARGINS) */}
+                  {/* CENTRAL DARTBOARD */}
                   <div className="relative w-[50%] aspect-square z-20 flex items-center justify-center pointer-events-auto">
-                    {/* ボードの奥行き影 */}
-                    <div className="absolute inset-0 rounded-full bg-black/60 blur-md pointer-events-none transform translate-y-2 scale-98" />
+                    <div className="absolute inset-0 rounded-full bg-black/60 blur-md pointer-events-none transform translate-y-2" />
                     <svg ref={boardRef} onClick={handleBoardClick} viewBox="-210 -210 420 420" className="w-full h-full drop-shadow-[0_15px_30px_rgba(0,0,0,0.95)] overflow-visible cursor-crosshair">
                       <circle r="195" fill="#0c0c10" stroke="#1c1c24" strokeWidth="3" />
                       <circle r="176" fill="none" stroke="#2c2c36" strokeWidth="0.8" />
@@ -949,7 +955,7 @@
                     </svg>
                   </div>
 
-                  {/* PLAYER 2 FLIQLO BOX (RIGHT SIDE - BEHIND BOARD) */}
+                  {/* PLAYER 2 BOX (RIGHT SIDE) */}
                   <div className="absolute right-0 w-[42%] z-10 transition-transform duration-300">
                     <div className="text-right pr-2 mb-1.5 flex items-center justify-between">
                       {activePlayerIndex === 1 && <span className="text-[10px] text-amber-500 animate-ping">●</span>}
@@ -967,11 +973,11 @@
                           players[1].history.map((h, idx) => (
                             <div key={idx} className={`flex items-center justify-between px-2 py-1 border-b border-zinc-900/50 last:border-0 ${h.isBurst ? 'opacity-40' : ''}`}>
                               <span className="text-[8px] font-bold text-zinc-600 w-5 shrink-0">R{h.roundNum}</span>
-                              <span className={`text-[8px] font-mono flex-1 text-center truncate ${h.isBurst ? 'text-rose-500 line-through' : 'text-zinc-400'}`}>
+                              <span className={`text-[8px] font-mono flex-1 text-center truncate px-1 ${h.isBurst ? 'text-rose-500 line-through' : 'text-zinc-400'}`}>
                                 {h.throws.map(t => t.label).join(' · ')}
                               </span>
-                              <span className={`text-[9px] font-black w-6 text-right shrink-0 ${h.isBurst ? 'text-rose-500' : 'text-amber-400'}`}>
-                                {h.isBurst ? 'B' : h.roundScore}
+                              <span className={`text-[9px] font-black w-12 text-right shrink-0 ${h.isBurst ? 'text-rose-500' : 'text-amber-400'}`}>
+                                {h.isBurst ? 'BURST' : h.roundScore}
                               </span>
                             </div>
                           ))
@@ -983,12 +989,12 @@
                 </div>
 
                 {/* 3. DART THROWS INDICATOR */}
-                <div className="w-full max-w-sm mt-2 bg-zinc-900/40 p-2 rounded-xl border border-zinc-800/80 flex justify-between items-center relative z-20">
+                <div className="w-full max-w-sm mt-2 bg-zinc-900/40 p-2 rounded-xl border border-zinc-800 flex justify-between items-center relative z-20">
                   <div className="flex gap-1.5">
                     {[0, 1, 2].map(idx => {
                       const t = currentThrows[idx];
                       return (
-                        <div key={idx} onClick={() => currentThrows[idx] && setEditingThrowIndex(idx)} className={`w-14 h-10 rounded-lg flex flex-col justify-center items-center font-mono cursor-pointer transition-all ${editingThrowIndex === idx ? 'bg-sky-500/20 border border-sky-400 text-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.25)]' : t ? 'bg-[#18181f] border border-amber-500/30 text-white' : 'bg-black/40 border border-zinc-850 text-zinc-700'}`}>
+                        <div key={idx} onClick={() => currentThrows[idx] && setEditingThrowIndex(idx)} className={`w-14 h-10 rounded-lg flex flex-col justify-center items-center font-mono cursor-pointer transition-all ${editingThrowIndex === idx ? 'bg-sky-500/20 border border-sky-400 text-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.25)]' : t ? 'bg-[#18181f] border border-amber-500/30 text-white' : 'bg-black/40 border border-zinc-800 text-zinc-700'}`}>
                           <span className="text-[7px] block text-zinc-500 uppercase leading-none mb-0.5">Dart {idx+1}</span>
                           <span className="text-sm font-black">{t ? t.label : '-'}</span>
                         </div>
@@ -1009,16 +1015,12 @@
               {/* INPUT CONTROLS PANEL */}
               <div className="w-full lg:w-[410px] shrink-0 flex flex-col justify-center relative z-20">
 
-                {/* HIGHLY OPTIMIZED INTERACTIVE KEYPAD */}
-                <div className="w-full mt-2 bg-[#09090d]/80 p-3 rounded-2xl border border-zinc-850 shadow-2xl backdrop-blur-md">
-                  
+                <div className="w-full mt-2 bg-[#09090d]/80 p-3 rounded-2xl border border-zinc-800 shadow-2xl backdrop-blur-md">
                   <div className="grid grid-cols-12 gap-2.5">
                     
-                    {/* LEFT SLOT: SINGLE/DOUBLE/TRIPLE + ERGONOMIC NUMBER GRID (COL-SPAN-9) */}
+                    {/* LEFT SLOT */}
                     <div className="col-span-9 flex flex-col gap-3">
-                      
-                      {/* 倍率セレクトボタン（大幅に押しやすさを拡大） */}
-                      <div className="grid grid-cols-3 gap-1.5 p-1 bg-black/40 rounded-xl border border-zinc-850">
+                      <div className="grid grid-cols-3 gap-1.5 p-1 bg-black/40 rounded-xl border border-zinc-800">
                         <button onClick={() => { playSound('click'); setPadMultiplier(1); }} className={`py-3 rounded-lg text-xs font-black uppercase cursor-pointer transition-all border ${
                           padMultiplier === 1 
                             ? 'bg-amber-500 border-amber-400 text-black shadow-[0_3px_8px_rgba(245,158,11,0.2)] font-extrabold translate-y-[-1px]' 
@@ -1038,10 +1040,7 @@
                         }`}>Triple</button>
                       </div>
 
-                      {/* 20〜0 テンキーパッドレイアウト */}
                       <div className="flex flex-col gap-2">
-                        
-                        {/* 超頻出 20〜15（最上段横一列） */}
                         <div className="grid grid-cols-6 gap-1.5 bg-amber-500/5 p-1.5 rounded-xl border border-amber-500/10">
                           {[20, 19, 18, 17, 16, 15].map(num => (
                             <button
@@ -1054,7 +1053,6 @@
                           ))}
                         </div>
 
-                        {/* 14〜0 (綺麗に並ぶ5列配置) */}
                         <div className="grid grid-cols-5 gap-1.5 justify-items-center">
                           {[
                             14, 13, 12, 11, 10,
@@ -1066,7 +1064,7 @@
                               onClick={() => handleKeypadTap(num)}
                               className={`w-11 h-11 md:w-13 md:h-13 rounded-xl flex items-center justify-center font-black font-mono text-sm md:text-base active:translate-y-0.5 transition-all cursor-pointer shadow-[0_4px_10px_rgba(0,0,0,0.5)] border ${
                                 num === 0 
-                                  ? 'bg-[#18181f] border-rose-900/60 text-rose-400 hover:bg-zinc-850' 
+                                  ? 'bg-[#18181f] border-rose-900/60 text-rose-400 hover:bg-zinc-800' 
                                   : 'bg-zinc-950 border-zinc-800 text-zinc-200 hover:border-zinc-500'
                               }`}
                             >
@@ -1074,25 +1072,21 @@
                             </button>
                           ))}
                         </div>
-
                       </div>
                     </div>
 
-                    {/* RIGHT SLOT: VERTICAL BULL BUTTONS (COL-SPAN-3) */}
+                    {/* RIGHT SLOT: BULL BUTTONS */}
                     <div className="col-span-3 flex flex-col justify-between gap-2 self-stretch">
-                      
-                      {/* OUT BULL - 輪っかの〇に変更 */}
                       <button 
                         onClick={() => handleKeypadTap(25, 1, 'outer')} 
-                        className="flex-1 rounded-xl font-mono font-black uppercase border flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 border-emerald-900/70 text-emerald-400 hover:bg-emerald-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)]"
+                        className="flex-1 rounded-xl font-mono font-black uppercase border-2 flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 border-[#16a34a] text-[#16a34a] hover:bg-emerald-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)]"
                         title={bullType === 'fat' ? "アウターブル(50点)" : "アウターブル(25点)"}
                       >
-                        <span className="text-4xl leading-none font-black text-emerald-400">○</span>
+                        <span className="text-4xl leading-none font-black text-[#16a34a]">○</span>
                         <span className="leading-tight text-xs font-black tracking-tight">OUT<br/>BULL</span>
                         <span className="text-base font-black text-zinc-200">{bullType === 'fat' ? "50" : "25"}</span>
                       </button>
 
-                      {/* IN BULL */}
                       <button 
                         onClick={() => handleKeypadTap(25, 2, 'inner')} 
                         className="flex-1 rounded-xl font-mono font-black uppercase border flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 border-rose-900/70 text-rose-400 hover:bg-rose-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)]"
@@ -1106,10 +1100,8 @@
 
                   </div>
 
-                  {/* BOTTOM ACTION BUTTONS - DESIGNED FOR MAXIMUM COMFORT */}
-                  <div className="mt-4 pt-3 border-t border-zinc-850/80 space-y-2.5">
-                    
-                    {/* BURST BANNER */}
+                  {/* BOTTOM ACTION BUTTONS */}
+                  <div className="mt-4 pt-3 border-t border-zinc-800 space-y-2.5">
                     {isRoundBurst && (
                       <div className="w-full py-3 rounded-xl bg-rose-950/60 border-2 border-rose-500/70 text-center">
                         <span className="text-rose-400 font-black text-base tracking-widest">💥 BURST — 得点なし</span>
@@ -1117,9 +1109,7 @@
                       </div>
                     )}
 
-                    {/* SECONDARY UTILITIES */}
                     <div className="grid grid-cols-3 gap-2">
-                      {/* 1本消去 */}
                       <button 
                         onClick={() => handleUndoSingleDart()} 
                         className="py-3.5 bg-zinc-950 hover:bg-[#141419] border border-zinc-800 rounded-xl flex items-center justify-center gap-1.5 active:translate-y-0.5 transition-all cursor-pointer text-zinc-400 text-xs font-bold"
@@ -1129,7 +1119,6 @@
                         <span>1本消去</span>
                       </button>
 
-                      {/* リセット */}
                       <button 
                         onClick={() => handleFlushRound()} 
                         className="py-3.5 bg-zinc-950 hover:bg-[#1c1414] border border-rose-900/50 rounded-xl flex items-center justify-center gap-1.5 active:translate-y-0.5 transition-all cursor-pointer text-rose-400 text-xs font-bold"
@@ -1139,7 +1128,6 @@
                         <span>リセット</span>
                       </button>
 
-                      {/* プレイヤーを戻す */}
                       <button 
                         onClick={handleUndoCommittedTurn} 
                         disabled={turnHistoryState.length === 0}
@@ -1151,7 +1139,6 @@
                       </button>
                     </div>
 
-                    {/* CONFIRM BUTTON */}
                     <button 
                       onClick={handleCommitRound} 
                       className={`w-full py-5 rounded-2xl font-fliqlo font-black text-base tracking-widest uppercase transition-all duration-150 border flex items-center justify-center gap-2 cursor-pointer ${
@@ -1205,7 +1192,6 @@
         );
       }
 
-      // エントリーポイントの初期化
       const root = ReactDOM.createRoot(document.getElementById('root'));
       root.render(<App />);
     </script>
