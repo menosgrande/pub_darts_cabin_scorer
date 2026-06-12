@@ -3,23 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Pub Darts Cabin Scorer</title>
+    <title>Pub Darts Cabin Scorer - Interactive Edition</title>
 
+    <!-- React 18 CDN -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
+    <!-- Tailwind CSS v3 CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
+      :root {
+        color-scheme: dark;
+      }
+      html {
+        background: #050508;
+      }
       body {
         margin: 0;
-        background-color: #050508;
+        min-height: 100dvh;
+        background:
+          radial-gradient(circle at top, rgba(245, 158, 11, 0.08), transparent 28%),
+          radial-gradient(circle at bottom, rgba(225, 29, 72, 0.05), transparent 22%),
+          #050508;
         -webkit-tap-highlight-color: transparent;
         overscroll-behavior: none;
       }
-      /* スクロールバーをスマートに非表示化 */
+      button,
+      input,
+      svg {
+        -webkit-tap-highlight-color: transparent;
+      }
+      input {
+        caret-color: #f59e0b;
+      }
       .no-scrollbar::-webkit-scrollbar {
         display: none;
       }
@@ -27,1173 +44,1702 @@
         -ms-overflow-style: none;
         scrollbar-width: none;
       }
-      /* Fliqlo（パタパタ時計）を再現するシャープな超極太フォント */
       .font-fliqlo {
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
         font-weight: 900;
         letter-spacing: -0.04em;
+      }
+      .panel-glow {
+        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      }
+      .soft-metal {
+        background: linear-gradient(180deg, rgba(24, 24, 31, 0.95) 0%, rgba(9, 9, 13, 0.92) 100%);
+      }
+      .score-slot {
+        backdrop-filter: blur(10px);
+      }
+
+      /* Fliqlo (flip clock) 3D layout inside absolute containers */
+      .flip-container {
+        perspective: 300px;
+        transform-style: preserve-3d;
+      }
+      
+      .fliqlo-card {
+        background: #121216;
+        box-shadow: 
+          0 10px 25px rgba(0, 0, 0, 0.7),
+          inset 0 1px 0 rgba(255, 255, 255, 0.08),
+          inset 0 -1px 0 rgba(0, 0, 0, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.02);
+      }
+
+      .card-half {
+        position: absolute;
+        left: 0;
+        width: 100%;
+        height: 50%;
+        overflow: hidden;
+        backface-visibility: hidden;
+      }
+
+      /* Fliqlo absolute layered positioning */
+      .card-top-bg {
+        top: 0;
+        background: linear-gradient(to bottom, #16161c 0%, #111115 100%);
+        border-top-left-radius: 10px;
+        border-top-right-radius: 10px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+        z-index: 10;
+      }
+      
+      .card-bottom-bg {
+        bottom: 0;
+        background: linear-gradient(to bottom, #0f0f13 0%, #0c0c0f 100%);
+        border-bottom-left-radius: 10px;
+        border-bottom-right-radius: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.04);
+        z-index: 10;
+      }
+
+      .card-top-flip {
+        top: 0;
+        background: linear-gradient(to bottom, #16161c 0%, #111115 100%);
+        border-top-left-radius: 10px;
+        border-top-right-radius: 10px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+        transform-origin: bottom;
+        animation: flipTopAnim 0.32s ease-in forwards;
+        z-index: 25;
+      }
+
+      .card-bottom-flip {
+        bottom: 0;
+        background: linear-gradient(to bottom, #0f0f13 0%, #0c0c0f 100%);
+        border-bottom-left-radius: 10px;
+        border-bottom-right-radius: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.04);
+        transform-origin: top;
+        transform: rotateX(90deg);
+        animation: flipBottomAnim 0.32s ease-out 0.16s forwards;
+        z-index: 30;
+      }
+
+      .card-half-inner {
+        position: absolute;
+        left: 0;
+        width: 100%;
+        height: 200%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+      }
+
+      .card-top-inner {
+        top: 0;
+      }
+
+      .card-bottom-inner {
+        bottom: 0;
+      }
+
+      @keyframes flipTopAnim {
+        0% { transform: rotateX(0deg); }
+        100% { transform: rotateX(-90deg); }
+      }
+
+      @keyframes flipBottomAnim {
+        0% { transform: rotateX(90deg); }
+        100% { transform: rotateX(0deg); }
+      }
+
+      .hinge-left, .hinge-right {
+        position: absolute;
+        top: 50%;
+        width: 4px;
+        height: 6px;
+        background: #25252d;
+        border-radius: 2px;
+        z-index: 40;
+        transform: translateY(-50%);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.8);
+      }
+      .hinge-left { left: 1px; }
+      .hinge-right { right: 1px; }
+
+      .fliqlo-tile {
+        width: 8.5vw;
+        height: 12.5vw;
+        max-width: 62px;
+        max-height: 90px;
+        min-width: 28px;
+        min-height: 42px;
+      }
+      .fliqlo-text {
+        font-size: 6.5vw;
+      }
+      @media (min-width: 640px) {
+        .fliqlo-tile {
+          width: 3.5rem;
+          height: 5rem;
+        }
+        .fliqlo-text {
+          font-size: 3rem;
+        }
+      }
+      @media (min-width: 768px) {
+        .fliqlo-tile {
+          width: 4rem;
+          height: 6rem;
+        }
+        .fliqlo-text {
+          font-size: 3.75rem;
+        }
+      }
+
+      .history-font {
+        font-size: 2.2vw;
+      }
+      @media (min-width: 640px) {
+        .history-font {
+          font-size: 10px;
+        }
+      }
+      @media (min-width: 768px) {
+        .history-font {
+          font-size: 11px;
+        }
+      }
+
+      /* Pulse glow animation for active assistive steps */
+      @keyframes pulseBorder {
+        0%, 100% { border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 4px rgba(245, 158, 11, 0.1); }
+        50% { border-color: rgba(245, 158, 11, 1); box-shadow: 0 0 12px rgba(245, 158, 11, 0.45); }
+      }
+      .assist-pulse {
+        animation: pulseBorder 1.8s infinite ease-in-out;
       }
     </style>
   </head>
   <body>
     <div id="root"></div>
 
-    <script type="text/babel">
-      const { useState, useEffect, useRef } = React;
+    <script>
+(() => {
+  const { useState, useEffect, useRef, useMemo } = React;
+  const WEDGES = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+  const MAX_THROWS_PER_TURN = 3;
 
-      const WEDGES = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+  // Master checkout table for standard dart finishes
+  const ARRANGE_TABLE = {
+    170: "T20 - T20 - Bull",
+    167: "T20 - T19 - Bull",
+    164: "T20 - T18 - Bull",
+    161: "T20 - T17 - Bull",
+    160: "T20 - T20 - D20",
+    158: "T20 - T20 - D19",
+    157: "T20 - T19 - D20",
+    156: "T20 - T20 - D18",
+    155: "T20 - T19 - D19",
+    154: "T20 - T18 - D20",
+    153: "T20 - T19 - D18",
+    152: "T20 - T20 - D16",
+    151: "T20 - T17 - D20",
+    150: "T20 - T18 - D18",
+    149: "T20 - T19 - D16",
+    148: "T20 - T16 - D20",
+    147: "T20 - T17 - D18",
+    146: "T20 - T18 - D16",
+    145: "T20 - T15 - D20",
+    144: "T20 - T18 - D15",
+    143: "T20 - T17 - D16",
+    142: "T20 - T14 - D20",
+    141: "T20 - T15 - D18",
+    140: "T20 - T16 - D16",
+    139: "T19 - T14 - D20",
+    138: "T20 - T14 - D18",
+    137: "T19 - T16 - D16",
+    136: "T20 - T16 - D14",
+    135: "T20 - T15 - D15",
+    134: "T20 - T14 - D16",
+    133: "T20 - T13 - D17",
+    132: "T20 - T16 - D12",
+    131: "T20 - T13 - D16",
+    130: "T20 - T18 - D8",
+    129: "T19 - T16 - D12",
+    128: "T18 - T18 - D10",
+    127: "T20 - T17 - D8",
+    126: "T19 - T19 - D6",
+    125: "T18 - T17 - D10",
+    124: "T20 - D16 - D16",
+    123: "T19 - T16 - D9",
+    122: "T18 - T20 - D4",
+    121: "T20 - T11 - D14",
+    120: "T20 - S20 - D20",
+    119: "T19 - S10 - D16",
+    118: "T20 - S18 - D20",
+    117: "T20 - S17 - D20",
+    116: "T20 - S16 - D20",
+    115: "T20 - S15 - D20",
+    114: "T20 - S14 - D20",
+    113: "T19 - S16 - D20",
+    112: "T20 - S12 - D20",
+    111: "T20 - S11 - D20",
+    110: "T20 - S10 - D20",
+    109: "T19 - S12 - D20",
+    108: "T20 - S16 - D16",
+    107: "T19 - S18 - D16",
+    106: "T20 - S14 - D16",
+    105: "T19 - S16 - D16",
+    104: "T20 - S12 - D16",
+    103: "T19 - S10 - D18",
+    102: "T20 - S10 - D16",
+    101: "T17 - S10 - D20",
+    100: "T20 - D20",
+    99: "T19 - S10 - D16",
+    98: "T20 - D19",
+    97: "T19 - D20",
+    96: "T20 - D18",
+    95: "T19 - D19",
+    94: "T18 - D20",
+    93: "T19 - D18",
+    92: "T20 - D16",
+    91: "T17 - D20",
+    90: "T20 - D15",
+    89: "T19 - D16",
+    88: "T16 - D20",
+    87: "T17 - D18",
+    86: "T18 - D16",
+    85: "T15 - D20",
+    84: "T16 - D18",
+    83: "T17 - D16",
+    82: "T14 - D20",
+    81: "T15 - D18",
+    80: "T20 - D10",
+    79: "T13 - D20",
+    78: "T14 - D18",
+    77: "T15 - D16",
+    76: "T20 - D8",
+    75: "T17 - D12",
+    74: "T14 - D16",
+    73: "T19 - S8 - D4",
+    72: "T16 - D12",
+    71: "T13 - D16",
+    70: "T18 - D8",
+    69: "T15 - S12 - D6",
+    68: "T16 - D10",
+    67: "T17 - D8",
+    66: "T14 - D12",
+    65: "T15 - D10",
+    64: "T16 - D8",
+    63: "T13 - D12",
+    62: "T10 - D16",
+    61: "T11 - D14",
+    60: "S20 - D20",
+    59: "S19 - D20",
+    58: "S18 - D20",
+    57: "S17 - D20",
+    56: "S16 - D20",
+    55: "S15 - D20",
+    54: "S14 - D20",
+    53: "S13 - D20",
+    52: "S12 - D20",
+    51: "S11 - D20",
+    50: "Bullseye",
+    49: "S17 - D16",
+    48: "S16 - D16",
+    47: "S15 - D16",
+    46: "S6 - D20",
+    45: "S13 - D16",
+    44: "S12 - D16",
+    43: "S3 - D20",
+    42: "S10 - D16",
+    41: "S9 - D16",
+    40: "D20",
+    39: "S7 - D16",
+    38: "D19",
+    37: "S5 - D16",
+    36: "D18",
+    35: "S3 - D16",
+    34: "D17",
+    33: "S1 - D16",
+    32: "D16",
+    31: "S15 - D8",
+    30: "D15",
+    29: "S13 - D8",
+    28: "D14",
+    27: "S11 - D8",
+    26: "D13",
+    24: "D12",
+    23: "S7 - D8",
+    22: "D11",
+    21: "S5 - D8",
+    20: "D10",
+    19: "S3 - D8",
+    18: "D9",
+    17: "S1 - D8",
+    16: "D8",
+    15: "S7 - D4",
+    14: "D7",
+    13: "S5 - D4",
+    12: "D6",
+    11: "S3 - D4",
+    10: "D5",
+    9: "S1 - D4",
+    8: "D4",
+    7: "S3 - D2",
+    6: "D3",
+    5: "S1 - D2",
+    4: "D2",
+    3: "S1 - D1",
+    2: "D1"
+  };
 
-      const ARRANGE_TABLE = {
-        170: "T20 - T20 - Bull",
-        167: "T20 - T19 - Bull",
-        164: "T25 - T19 - Bull",
-        161: "T20 - T17 - Bull",
-        160: "T20 - T20 - D20",
-        158: "T20 - T20 - D19",
-        157: "T20 - T19 - D20",
-        156: "T20 - T20 - D18",
-        155: "T20 - T19 - D19",
-        154: "T20 - T18 - D20",
-        153: "T20 - T19 - D18",
-        152: "T20 - T20 - D16",
-        151: "T20 - T17 - D20",
-        150: "T20 - T18 - D18",
-        149: "T20 - T19 - D16",
-        148: "T20 - S16 - D20",
-        147: "T20 - T17 - D18",
-        146: "T20 - T18 - D16",
-        145: "T20 - T15 - D20",
-        144: "T20 - T18 - D15",
-        143: "T20 - T17 - D16",
-        142: "T20 - T14 - D20",
-        141: "T20 - T15 - D18",
-        140: "T20 - T16 - D16",
-        139: "T19 - T14 - D20",
-        138: "T20 - T14 - D18",
-        137: "T19 - T16 - D16",
-        136: "T20 - T16 - D14",
-        135: "T20 - T15 - D15",
-        134: "T20 - T14 - D16",
-        133: "T20 - T13 - D17",
-        132: "T20 - T16 - D12",
-        131: "T20 - T13 - D16",
-        130: "T20 - T18 - D8",
-        129: "T19 - T16 - D12",
-        128: "T18 - T18 - D10",
-        127: "T20 - T17 - D8",
-        126: "T19 - T19 - D6",
-        125: "T18 - T17 - D10",
-        124: "T20 - D16 - D16",
-        123: "T19 - T16 - D9",
-        122: "T18 - T20 - D4",
-        121: "T20 - T11 - D14",
-        120: "T20 - S20 - D20",
-        119: "T19 - S10 - D16",
-        118: "T20 - S18 - D20",
-        117: "T20 - S17 - D20",
-        116: "T20 - S16 - D20",
-        115: "T20 - S15 - D20",
-        114: "T20 - S14 - D20",
-        113: "T19 - S16 - D20",
-        112: "T20 - S12 - D20",
-        111: "T20 - S11 - D20",
-        110: "T20 - S10 - D20",
-        109: "T19 - S12 - D20",
-        108: "T20 - S16 - D16",
-        107: "T19 - S18 - D16",
-        106: "T20 - S14 - D16",
-        105: "T19 - S16 - D16",
-        104: "T20 - S12 - D16",
-        103: "T19 - S10 - D18",
-        102: "T20 - S10 - D16",
-        101: "T17 - S10 - D20",
-        100: "T20 - D20",
-        99: "T19 - S10 - D16",
-        98: "T20 - D19",
-        97: "T19 - D20",
-        96: "T20 - D18",
-        95: "T19 - D19",
-        94: "T18 - D20",
-        93: "T19 - D18",
-        92: "T20 - D16",
-        91: "T17 - D20",
-        90: "T20 - D15",
-        89: "T19 - D16",
-        88: "T16 - D20",
-        87: "T17 - D18",
-        86: "T18 - D16",
-        85: "T15 - D20",
-        84: "T16 - D18",
-        83: "T17 - D16",
-        82: "T14 - D20",
-        81: "T15 - D18",
-        80: "T20 - D10",
-        79: "T13 - D20",
-        78: "T14 - D18",
-        77: "T15 - D16",
-        76: "T20 - D8",
-        75: "T17 - D12",
-        74: "T14 - D16",
-        73: "T19 - S8 - D4",
-        72: "T16 - D12",
-        71: "T13 - D16",
-        70: "T18 - D8",
-        69: "T15 - S12 - D6",
-        68: "T16 - D10",
-        67: "T17 - D8",
-        66: "T14 - D12",
-        65: "T15 - D10",
-        64: "T16 - D8",
-        63: "T13 - D12",
-        62: "T10 - D16",
-        61: "T11 - D14",
-        60: "S20 - D20",
-        59: "S19 - D20",
-        58: "S18 - D20",
-        57: "S17 - D20",
-        56: "S16 - D20",
-        55: "S15 - D20",
-        54: "S14 - D20",
-        53: "S13 - D20",
-        52: "S12 - D20",
-        51: "S11 - D20",
-        50: "Bullseye",
-        49: "S17 - D16",
-        48: "S16 - D16",
-        47: "S15 - D16",
-        46: "S6 - D20",
-        45: "S13 - D16",
-        44: "S12 - D16",
-        43: "S3 - D20",
-        42: "S10 - D16",
-        41: "S9 - D16",
-        40: "D20",
-        38: "D19",
-        36: "D18",
-        34: "D17",
-        32: "D16",
-        30: "D15",
-        28: "D14",
-        26: "D13",
-        24: "D12",
-        22: "D11",
-        20: "D10",
-        18: "D9",
-        16: "D8",
-        14: "D7",
-        12: "D6",
-        10: "D5",
-        8: "D4",
-        6: "D3",
-        4: "D2",
-        2: "D1"
+  const cloneDeep = (value) => {
+    if (typeof window !== "undefined" && typeof window.structuredClone === "function") {
+      return window.structuredClone(value);
+    }
+    return JSON.parse(JSON.stringify(value));
+  };
+
+  const getSubtotal = (throws) => throws.reduce((acc, t) => acc + t.score * t.multiplier, 0);
+
+  const getRoundState = (remaining, throws, currentOutMode) => {
+    let currentRemaining = remaining;
+    for (let i = 0; i < throws.length; i++) {
+      const t = throws[i];
+      const hitScore = t.score * t.multiplier;
+      currentRemaining -= hitScore;
+      if (currentRemaining < 0) {
+        return { isBust: true, isFinished: false, remainingScore: remaining, subtotal: 0 };
+      }
+      if (currentRemaining === 1 && (currentOutMode === "double" || currentOutMode === "master")) {
+        return { isBust: true, isFinished: false, remainingScore: remaining, subtotal: 0 };
+      }
+      if (currentRemaining === 0) {
+        const isBullHit = Boolean(t.isBull || t.label.includes("Bull"));
+        const isValidCheckout = currentOutMode === "single" || currentOutMode === "double" && t.multiplier === 2 || currentOutMode === "master" && (t.multiplier === 2 || t.multiplier === 3 || isBullHit);
+        if (!isValidCheckout) {
+          return { isBust: true, isFinished: false, remainingScore: remaining, subtotal: 0 };
+        }
+        return { isBust: false, isFinished: true, remainingScore: 0, subtotal: getSubtotal(throws) };
+      }
+    }
+    return {
+      isBust: false,
+      isFinished: false,
+      remainingScore: currentRemaining,
+      subtotal: getSubtotal(throws)
+    };
+  };
+
+  const getHitSoundType = (throwData) => {
+    if (!throwData || throwData.multiplier === 0) return "click";
+    if (throwData.isBull || throwData.label.includes("Bull")) return "hit-bull";
+    if (throwData.multiplier === 3) return "hit-triple";
+    if (throwData.multiplier === 2) return "hit-double";
+    return "hit-single";
+  };
+
+  // Convert tap coordinates on SVG board back into accurate dart wedges
+  const getThrowFromCoords = (x, y, bullType) => {
+    const radius = Math.sqrt(x * x + y * y);
+    const radians = Math.atan2(y, x);
+    const rBullseye = 8.5, rOuterBull = 22, rTripleInner = 90, rTripleOuter = 112, rDoubleInner = 154, rDoubleOuter = 176, rOutOfBoard = 195;
+    
+    if (radius <= rBullseye) {
+      return { score: 50, multiplier: 2, x, y, label: "D-Bull", isBull: true };
+    } else if (radius <= rOuterBull) {
+      return bullType === "fat" ? { score: 50, multiplier: 1, x, y, label: "Bull(50)", isBull: true } : { score: 25, multiplier: 1, x, y, label: "S-Bull(25)", isBull: true };
+    }
+    
+    let degrees = radians * (180 / Math.PI);
+    let deg = (degrees + 360) % 360;
+    let adjustedDeg = (deg + 90 + 9) % 360;
+    let wedgeIdx = Math.floor(adjustedDeg / 18);
+    let scoreNum = WEDGES[wedgeIdx];
+    let score = scoreNum, multiplier = 1, label = `${score}`;
+    
+    if (radius >= rTripleInner && radius <= rTripleOuter) {
+      multiplier = 3;
+      label = `T${scoreNum}`;
+    } else if (radius >= rDoubleInner && radius <= rDoubleOuter) {
+      multiplier = 2;
+      label = `D${scoreNum}`;
+    } else if (radius > rOutOfBoard) {
+      score = 0;
+      multiplier = 0;
+      label = "Miss";
+    } else {
+      multiplier = 1;
+      label = `S${scoreNum}`;
+    }
+    return { score, multiplier, x, y, label };
+  };
+
+  // Resolve finish suggestions for Steel Darts scoring
+  const getSteelDartsArrangement = (score, bullType) => {
+    if (score > 350) return "No finish available yet";
+    if (score === 25) {
+      return "S9 - D8";
+    }
+    if (score >= 171) {
+      if (score >= 301) {
+        return "T20 - T20 - T20";
+      }
+      const setupTable = {
+        300: "T20 - T20 - T20",
+        290: "T20 - T20 - T20",
+        280: "T20 - T20 - T20",
+        270: "T20 - T20 - T20",
+        260: "T20 - T20 - T20",
+        250: "T20 - T20 - T10",
+        240: "T20 - T20 - T20",
+        235: "T20 - T19 - T18",
+        230: "T20 - T20 - T10",
+        228: "T20 - T20 - T16",
+        226: "T20 - T20 - T12",
+        224: "T20 - T20 - T18",
+        222: "T20 - T20 - T14",
+        220: "T20 - T20 - T20",
+        218: "T20 - T20 - T18",
+        215: "T20 - T17 - D18",
+        212: "T20 - T20 - T12",
+        210: "T20 - T20 - S10",
+        208: "T20 - T20 - D16",
+        206: "T20 - T20 - S10",
+        204: "T20 - T20 - D12",
+        202: "T20 - T20 - S10",
+        200: "T20 - T20 - D20",
+        198: "T20 - T20 - S18",
+        196: "T20 - T20 - D18",
+        194: "T20 - T20 - S14",
+        192: "T20 - T20 - D16",
+        190: "T20 - T18 - D18",
+        188: "T20 - T20 - S8",
+        186: "T20 - T18 - D16",
+        184: "T20 - T18 - S10",
+        182: "T20 - T18 - D14",
+        180: "T20 - T20 - S20",
+        178: "T20 - T18 - S10",
+        176: "T20 - T20 - S16",
+        174: "T20 - T18 - D10",
+        172: "T20 - T20 - D6",
+        171: "T20 - T19 - D17"
       };
-
-      const getDartsArrangement = (score) => {
-        if (score > 170) return "No finish available yet";
-        if ([169, 168, 166, 165, 163, 162, 159].includes(score)) return "BOGEY (No checkout)";
-        return ARRANGE_TABLE[score] || "No checkout";
+      if (setupTable[score]) return setupTable[score];
+      const remaining = score - 120;
+      if (remaining > 0 && remaining <= 20) {
+        return `T20 - T20 - S${remaining}`;
+      } else if (remaining === 25) {
+        return `T20 - T20 - S-Bull`;
+      } else if (remaining === 50) {
+        return `T20 - T20 - D-Bull`;
+      }
+      return "T20 - T20 - T20";
+    }
+    if ([169, 168, 166, 165, 163, 162, 159].includes(score)) {
+      const bogeyTable = {
+        169: "T20 - T19 - D16",
+        168: "T20 - T20 - D16",
+        166: "T20 - T18 - D16",
+        165: "T20 - T19 - D16",
+        163: "T20 - T17 - D16",
+        162: "T20 - T20 - D16",
+        159: "T19 - T20 - D11"
       };
+      return bogeyTable[score];
+    }
+    if (bullType === "separate") {
+      if (score === 50) return "D-Bull (50)";
+    } else {
+      if (score === 50) return "Bull (50)";
+    }
+    return ARRANGE_TABLE[score] || "No checkout";
+  };
 
-      const Icons = {
-        Volume2: () => (
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+  const Icons = {
+    Volume2: () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("polygon", { points: "11 5 6 9 2 9 2 15 6 15 11 19 11 5" }), React.createElement("path", { d: "M15.54 8.46a5 5 0 0 1 0 7.07" }), React.createElement("path", { d: "M19.07 4.93a10 10 0 0 1 0 14.14" })),
+    VolumeX: () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("polygon", { points: "11 5 6 9 2 9 2 15 6 15 11 19 11 5" }), React.createElement("line", { x1: "22", y1: "9", x2: "16", y2: "15" }), React.createElement("line", { x1: "16", y1: "9", x2: "22", y2: "15" })),
+    HelpCircle: () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("circle", { cx: "12", cy: "12", r: "10" }), React.createElement("path", { d: "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" }), React.createElement("line", { x1: "12", y1: "17", x2: "12.01", y2: "17" })),
+    Settings: () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("circle", { cx: "12", cy: "12", r: "3" }), React.createElement("path", { d: "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" })),
+    Undo2: () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("path", { d: "M3 7v6h6" }), React.createElement("path", { d: "M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" })),
+    Trash2: () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("polyline", { points: "3 6 5 6 21 6" }), React.createElement("path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }), React.createElement("line", { x1: "10", y1: "11", x2: "10", y2: "17" }), React.createElement("line", { x1: "14", y1: "11", x2: "14", y2: "17" })),
+    X: () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("line", { x1: "18", y1: "6", x2: "6", y2: "18" }), React.createElement("line", { x1: "6", y1: "6", x2: "18", y2: "18" })),
+    RotateCcw: () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "12", height: "12", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("path", { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" }), React.createElement("polyline", { points: "3 3 3 8 8 8" }))
+  };
+
+  /* ==========================================
+     3D FLIP-CLOCK DIGIT COMPONENT
+     ========================================== */
+  const FliqloDigit = ({ value, isActive, isBust }) => {
+    const [currentVal, setCurrentVal] = useState(value);
+    const [nextVal, setNextVal] = useState(value);
+    const [isFlipping, setIsFlipping] = useState(false);
+
+    useEffect(() => {
+      if (value !== currentVal) {
+        setNextVal(value);
+        setIsFlipping(true);
+        const timer = setTimeout(() => {
+          setCurrentVal(value);
+          setIsFlipping(false);
+        }, 320);
+        return () => clearTimeout(timer);
+      }
+    }, [value, currentVal]);
+
+    const displayCurrent = currentVal === "\xA0" ? "" : currentVal;
+    const displayNext = nextVal === "\xA0" ? "" : nextVal;
+
+    const activeStyleClass = isActive ? "ring-2 ring-amber-500/50 shadow-[0_0_25px_rgba(245,158,11,0.2)]" : "opacity-75";
+    const textStyleClass = `font-fliqlo font-black fliqlo-text leading-none tracking-tighter ${
+      isBust ? "text-rose-500" : "text-neutral-100"
+    }`;
+
+    return React.createElement(
+      "div",
+      { className: `relative fliqlo-tile flip-container select-none rounded-xl transition-all duration-300 ${activeStyleClass}` },
+      React.createElement("div", { className: "hinge-left" }),
+      React.createElement("div", { className: "hinge-right" }),
+
+      React.createElement(
+        "div",
+        { className: "card-half card-top-bg fliqlo-card" },
+        React.createElement("div", { className: `card-half-inner card-top-inner ${textStyleClass}` }, displayNext)
+      ),
+      React.createElement(
+        "div",
+        { className: "card-half card-bottom-bg fliqlo-card" },
+        React.createElement("div", { className: `card-half-inner card-bottom-inner ${textStyleClass}` }, displayCurrent)
+      ),
+
+      isFlipping ? React.createElement(React.Fragment, null,
+        React.createElement(
+          "div",
+          { className: "card-half card-top-flip fliqlo-card" },
+          React.createElement("div", { className: `card-half-inner card-top-inner ${textStyleClass}` }, displayCurrent)
         ),
-        VolumeX: () => (
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="22" y1="9" x2="16" y2="15"></line><line x1="16" y1="9" x2="22" y2="15"></line></svg>
-        ),
-        HelpCircle: () => (
-          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-        ),
-        Settings: () => (
-          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-        ),
-        Undo2: () => (
-          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path></svg>
-        ),
-        Trash2: () => (
-          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-        ),
-        X: () => (
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        ),
-        RotateCcw: () => (
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg>
+        React.createElement(
+          "div",
+          { className: "card-half card-bottom-flip fliqlo-card" },
+          React.createElement("div", { className: `card-half-inner card-bottom-inner ${textStyleClass}` }, displayNext)
         )
-      };
+      ) : React.createElement(React.Fragment, null,
+        React.createElement(
+          "div",
+          { className: "card-half card-top-bg fliqlo-card", style: { zIndex: 20 } },
+          React.createElement("div", { className: `card-half-inner card-top-inner ${textStyleClass}` }, displayCurrent)
+        ),
+        React.createElement(
+          "div",
+          { className: "card-half card-bottom-bg fliqlo-card", style: { zIndex: 20 } },
+          React.createElement("div", { className: `card-half-inner card-bottom-inner ${textStyleClass}` }, displayCurrent)
+        )
+      )
+    );
+  };
 
-      // ==========================================
-      // MAIN APP COMPONENT
-      // ==========================================
-      function App() {
-        const [p1StartScore, setP1StartScore] = useState(501);
-        const [p2StartScore, setP2StartScore] = useState(501);
-        const [outMode, setOutMode] = useState('single');
-        
-        // BULL設定: 'separate' (イン50/アウト25) or 'fat' (イン50/アウト50)
-        const [bullType, setBullType] = useState('separate');
-        const [soundEnabled, setSoundEnabled] = useState(true);
-        const [showHowTo, setShowHowTo] = useState(false);
-        const [showSettingsSetup, setShowSettingsSetup] = useState(true);
-        const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  const FliqloScoreboard = ({ score, isActive, isBust }) => {
+    const scoreStr = String(score).padStart(3, " ");
+    const digits = scoreStr.split("").map((d) => d === " " ? "\xA0" : d);
+    return React.createElement(
+      "div",
+      { className: "flex space-x-1.5 justify-center items-center" },
+      React.createElement(FliqloDigit, { value: digits[0], isActive, isBust }),
+      React.createElement(FliqloDigit, { value: digits[1], isActive, isBust }),
+      React.createElement(FliqloDigit, { value: digits[2], isActive, isBust })
+    );
+  };
 
-        const audioCtxRef = useRef(null);
+  const PlayerCockpit = ({ player, displayScore, isActive, isBust, alignment, label }) => {
+    return React.createElement(
+      "div",
+      { className: "flex flex-col justify-between h-full gap-3 bg-black/10 p-1.5 rounded-2xl border border-zinc-900/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]" },
+      React.createElement(
+        "div",
+        null,
+        React.createElement(
+          "div",
+          { className: "mb-1.5 flex items-center justify-between px-1" },
+          alignment === "left"
+            ? React.createElement(React.Fragment, null, React.createElement("span", { className: "text-[10px] md:text-xs font-black text-zinc-400 block tracking-widest truncate max-w-[100px] uppercase" }, player.name), isActive && React.createElement("span", { className: "text-[9px] text-amber-500 animate-pulse" }, "● PLAYING"))
+            : React.createElement(React.Fragment, null, isActive && React.createElement("span", { className: "text-[9px] text-amber-500 animate-pulse" }, "● PLAYING"), React.createElement("span", { className: "text-[10px] md:text-xs font-black text-zinc-400 block tracking-widest truncate max-w-[100px] ml-auto uppercase" }, player.name))
+        ),
+        React.createElement(FliqloScoreboard, { score: displayScore, isActive, isBust })
+      ),
+      React.createElement(
+        "div",
+        { className: "soft-metal panel-glow border border-zinc-800/90 rounded-xl overflow-hidden" },
+        React.createElement("span", { className: "text-[8px] font-mono text-zinc-500 block text-center border-b border-zinc-900 py-1 font-bold tracking-widest uppercase" }, label),
+        React.createElement(
+          "div",
+          { className: "overflow-y-auto h-24 md:h-28 no-scrollbar" },
+          player.history.length === 0
+            ? React.createElement("div", { className: "text-zinc-700 italic text-center py-3 text-[8px]" }, "— no rounds —")
+            : player.history.map((h, idx) =>
+                React.createElement(
+                  "div",
+                  { key: idx, className: "flex items-center justify-between px-2.5 py-1.5 border-b border-zinc-800/40 last:border-0" },
+                  React.createElement("span", { className: "text-[8px] font-bold text-zinc-500 w-6 shrink-0 text-left" }, "R", h.roundNum),
+                  React.createElement(
+                    "span",
+                    {
+                      className: `text-[9px] font-mono flex-1 text-center truncate px-1 ${
+                        h.isBurst ? "text-rose-500 line-through" : "text-zinc-300 font-bold"
+                      }`
+                    },
+                    h.throws.map((t) => t.label).join(" · ")
+                  ),
+                  React.createElement(
+                    "span",
+                    {
+                      className: `text-[9px] font-black w-12 text-right shrink-0 ${
+                        h.isBurst ? "text-rose-500" : "text-amber-400"
+                      }`
+                    },
+                    h.isBurst ? "BURST" : h.roundScore
+                  )
+                )
+              )
+        )
+      )
+    );
+  };
 
-        const [players, setPlayers] = useState([
-          { id: 'p1', name: 'PLAYER 1', initialScore: 501, remainingScore: 501, history: [] },
-          { id: 'p2', name: 'PLAYER 2', initialScore: 501, remainingScore: 501, history: [] }
-        ]);
-        const [activePlayerIndex, setActivePlayerIndex] = useState(0);
-        const [currentThrows, setCurrentThrows] = useState([]);
-        const [editingThrowIndex, setEditingThrowIndex] = useState(null);
-        const [isRoundBurst, setIsRoundBurst] = useState(false);
-        const [padMultiplier, setPadMultiplier] = useState(1);
-        const [turnHistoryState, setTurnHistoryState] = useState([]);
-        const [winner, setWinner] = useState(null);
-        const [confirmStage, setConfirmStage] = useState('throwing');
-        const [undoConfirmStage, setUndoConfirmStage] = useState('idle');
+  /* ==========================================
+     MAIN APP CONTAINER & STATE MACHINE
+     ========================================== */
+  function App() {
+    const [p1StartScore, setP1StartScore] = useState(501);
+    const [p2StartScore, setP2StartScore] = useState(501);
+    const [outMode, setOutMode] = useState("single");
+    const [bullType, setBullType] = useState("separate");
+    const [soundEnabled, setSoundEnabled] = useState(true);
+    const [showHowTo, setShowHowTo] = useState(false);
+    const [showSettingsSetup, setShowSettingsSetup] = useState(true);
+    
+    // Safety exit states for accidental quit triggers
+    const [showExitConfirm, setShowExitConfirm] = useState(false);
+    const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+    
+    const audioCtxRef = useRef(null);
+    const [players, setPlayers] = useState([
+      { id: "p1", name: "PLAYER 1", initialScore: 501, remainingScore: 501, history: [] },
+      { id: "p2", name: "PLAYER 2", initialScore: 501, remainingScore: 501, history: [] }
+    ]);
+    const [activePlayerIndex, setActivePlayerIndex] = useState(0);
+    const [currentThrows, setCurrentThrows] = useState([]);
+    const [editingThrowIndex, setEditingThrowIndex] = useState(null);
+    const [padMultiplier, setPadMultiplier] = useState(1);
+    const [turnHistoryState, setTurnHistoryState] = useState([]);
+    const [winner, setWinner] = useState(null);
+    const [confirmStage, setConfirmStage] = useState("throwing");
+    const [undoConfirmStage, setUndoConfirmStage] = useState("idle");
+    const boardRef = useRef(null);
+    const activePlayer = players[activePlayerIndex];
+    
+    const roundState = useMemo(
+      () => getRoundState(activePlayer.remainingScore, currentThrows, outMode),
+      [activePlayer.remainingScore, currentThrows, outMode]
+    );
+    const isRoundBurst = roundState.isBust;
+    
+    // Cancel focus if user re-taps current slot
+    const canAddMoreThrows = editingThrowIndex !== null || !roundState.isBust && !roundState.isFinished && currentThrows.length < MAX_THROWS_PER_TURN;
+    
+    useEffect(() => {
+      setUndoConfirmStage("idle");
+    }, [currentThrows]);
 
-        const boardRef = useRef(null);
-        const activePlayer = players[activePlayerIndex];
+    const initAudio = () => {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+    };
 
-        useEffect(() => {
-          setUndoConfirmStage('idle');
-        }, [currentThrows]);
-
-        const initAudio = () => {
-          if (!audioCtxRef.current) {
-            audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    const playSound = (type) => {
+      if (!soundEnabled) return;
+      try {
+        initAudio();
+        const ctx = audioCtxRef.current;
+        if (!ctx) return;
+        if (ctx.state === "suspended") ctx.resume();
+        const now = ctx.currentTime;
+        switch (type) {
+          case "click": {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "triangle";
+            osc.frequency.setValueAtTime(650, now);
+            osc.frequency.exponentialRampToValueAtTime(100, now + 0.05);
+            gain.gain.setValueAtTime(0.06, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.06);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(now + 0.07);
+            break;
           }
-        };
-
-        const playSound = (type) => {
-          if (!soundEnabled) return;
-          try {
-            initAudio();
-            const ctx = audioCtxRef.current;
-            if (!ctx) return;
-            if (ctx.state === 'suspended') ctx.resume();
-            const now = ctx.currentTime;
-
-            switch (type) {
-              case 'click': {
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(650, now);
-                osc.frequency.exponentialRampToValueAtTime(100, now + 0.05);
-                gain.gain.setValueAtTime(0.06, now);
-                gain.gain.linearRampToValueAtTime(0, now + 0.06);
-                osc.connect(gain); gain.connect(ctx.destination);
-                osc.start(); osc.stop(now + 0.07);
-                break;
-              }
-              case 'revert': {
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(220, now);
-                osc.frequency.linearRampToValueAtTime(320, now + 0.1);
-                gain.gain.setValueAtTime(0.08, now);
-                gain.gain.linearRampToValueAtTime(0, now + 0.1);
-                osc.connect(gain); gain.connect(ctx.destination);
-                osc.start(); osc.stop(now + 0.12);
-                break;
-              }
-              case 'hit-single': {
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(160, now);
-                osc.frequency.exponentialRampToValueAtTime(60, now + 0.1);
-                gain.gain.setValueAtTime(0.25, now);
-                gain.gain.linearRampToValueAtTime(0, now + 0.1);
-                osc.connect(gain); gain.connect(ctx.destination);
-                osc.start(); osc.stop(now + 0.12);
-                break;
-              }
-              case 'hit-double': {
-                [440, 523].forEach((f, idx) => {
-                  const osc = ctx.createOscillator();
-                  const gain = ctx.createGain();
-                  osc.type = 'sine';
-                  osc.frequency.setValueAtTime(f, now + idx * 0.03);
-                  gain.gain.setValueAtTime(0.12, now + idx * 0.03);
-                  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-                  osc.connect(gain); gain.connect(ctx.destination);
-                  osc.start(now + idx * 0.03); osc.stop(now + 0.35);
-                });
-                break;
-              }
-              case 'hit-triple': {
-                [587, 698, 880].forEach((f, idx) => {
-                  const osc = ctx.createOscillator();
-                  const gain = ctx.createGain();
-                  osc.type = 'sine';
-                  osc.frequency.setValueAtTime(f, now + idx * 0.04);
-                  gain.gain.setValueAtTime(0.1, now + idx * 0.04);
-                  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-                  osc.connect(gain); gain.connect(ctx.destination);
-                  osc.start(now + idx * 0.04); osc.stop(now + 0.45);
-                });
-                break;
-              }
-              case 'hit-bull': {
-                const osc1 = ctx.createOscillator();
-                const osc2 = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc1.type = 'sine'; osc1.frequency.setValueAtTime(880, now);
-                osc2.type = 'sine'; osc2.frequency.setValueAtTime(1109, now);
-                gain.gain.setValueAtTime(0.15, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
-                osc1.connect(gain); osc2.connect(gain); gain.connect(ctx.destination);
-                osc1.start(); osc2.start(); osc1.stop(now + 0.65); osc2.stop(now + 0.65);
-                break;
-              }
-              case 'burst': {
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(140, now);
-                osc.frequency.exponentialRampToValueAtTime(45, now + 0.4);
-                gain.gain.setValueAtTime(0.1, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-                osc.connect(gain); gain.connect(ctx.destination);
-                osc.start(); osc.stop(now + 0.42);
-                break;
-              }
-              case 'victory': {
-                const notes = [261, 329, 392, 523, 659, 783];
-                notes.forEach((f, idx) => {
-                  const osc = ctx.createOscillator();
-                  const gain = ctx.createGain();
-                  osc.type = 'triangle';
-                  osc.frequency.setValueAtTime(f, now + idx * 0.08);
-                  gain.gain.setValueAtTime(0.08, now + idx * 0.08);
-                  gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
-                  osc.connect(gain); gain.connect(ctx.destination);
-                  osc.start(now + idx * 0.08); osc.stop(now + 1.3);
-                });
-                break;
-              }
-            }
-          } catch (e) {
-            console.warn("Audio Context error", e);
+          case "revert": {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(220, now);
+            osc.frequency.linearRampToValueAtTime(320, now + 0.1);
+            gain.gain.setValueAtTime(0.08, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.1);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(now + 0.12);
+            break;
           }
-        };
-
-        const getThrowFromCoords = (x, y) => {
-          const radius = Math.sqrt(x * x + y * y);
-          const radians = Math.atan2(y, x);
-
-          const rBullseye = 8.5, rOuterBull = 22, rTripleInner = 90, rTripleOuter = 112, rDoubleInner = 154, rDoubleOuter = 176, rOutOfBoard = 195;
-
-          if (radius <= rBullseye) {
-            return bullType === 'fat' 
-              ? { score: 50, multiplier: 1, x, y, label: "Bull(50)", isBull: true }
-              : { score: 50, multiplier: 2, x, y, label: "D-Bull", isBull: true };
-          } else if (radius <= rOuterBull) {
-            return bullType === 'fat'
-              ? { score: 50, multiplier: 1, x, y, label: "Bull(50)", isBull: true }
-              : { score: 25, multiplier: 1, x, y, label: "S-Bull(25)", isBull: true };
+          case "hit-single": {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "triangle";
+            osc.frequency.setValueAtTime(160, now);
+            osc.frequency.exponentialRampToValueAtTime(60, now + 0.1);
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.1);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(now + 0.12);
+            break;
           }
-
-          let degrees = radians * (180 / Math.PI);
-          let deg = (degrees + 360) % 360;
-          let adjustedDeg = (deg + 90 + 9) % 360;
-          let wedgeIdx = Math.floor(adjustedDeg / 18);
-          let scoreNum = WEDGES[wedgeIdx];
-
-          let score = scoreNum, multiplier = 1, label = `${score}`;
-
-          if (radius >= rTripleInner && radius <= rTripleOuter) {
-            multiplier = 3; label = `T${scoreNum}`;
-          } else if (radius >= rDoubleInner && radius <= rDoubleOuter) {
-            multiplier = 2; label = `D${scoreNum}`;
-          } else if (radius > rOutOfBoard) {
-            score = 0; multiplier = 0; label = "Miss";
-          } else {
-            multiplier = 1; label = `S${scoreNum}`;
-          }
-
-          return { score, multiplier, x, y, label };
-        };
-
-        const getSubtotal = (throws) => throws.reduce((acc, t) => acc + (t.score * t.multiplier), 0);
-
-        const checkIsBust = (remaining, throws) => {
-          let currentRemaining = remaining;
-          
-          for (let i = 0; i < throws.length; i++) {
-            const t = throws[i];
-            const hitScore = t.score * t.multiplier;
-            currentRemaining -= hitScore;
-
-            if (currentRemaining < 0) return true;
-            if (currentRemaining === 1 && (outMode === 'double' || outMode === 'master')) return true;
-            if (currentRemaining === 0) {
-              // 最終スロー以外で0になった場合もその時点で判定
-              if (outMode === 'double') {
-                // ダブルアウト：通常ダブル、またはセパレート時のインナーブル(50点/倍率2)
-                if (t.multiplier !== 2) return true;
-              } else if (outMode === 'master') {
-                // マスターアウト：トリプル、ダブル、またはブル(ファット時の50点Bull、セパレート時の25点/50点BullすべてOK)
-                const isBullHit = t.isBull || t.label.includes("Bull");
-                if (t.multiplier !== 2 && t.multiplier !== 3 && !isBullHit) return true;
-              }
-              // 途中でクリーンに上がれた場合は残りのスローがあってもBustではない（確定処理へ）
-              if (i < throws.length - 1) return false;
-            }
-          }
-          return false;
-        };
-
-        const handleStartGame = () => {
-          playSound('revert');
-          setPlayers([
-            { id: 'p1', name: players[0].name.trim() || 'PLAYER 1', initialScore: p1StartScore, remainingScore: p1StartScore, history: [] },
-            { id: 'p2', name: players[1].name.trim() || 'PLAYER 2', initialScore: p2StartScore, remainingScore: p2StartScore, history: [] }
-          ]);
-          setActivePlayerIndex(0);
-          setCurrentThrows([]);
-          setEditingThrowIndex(null);
-          setIsRoundBurst(false);
-          setTurnHistoryState([]);
-          setWinner(null);
-          setShowSettingsSetup(false);
-          setConfirmStage('throwing');
-          setUndoConfirmStage('idle');
-        };
-
-        const handleKeypadTap = (score, specifiedMult, isBullType) => {
-          if (winner || isRoundBurst || confirmStage === 'next') return;
-          initAudio();
-
-          let activeMult = specifiedMult !== undefined ? specifiedMult : padMultiplier;
-          let finalMult = activeMult;
-          let label = "";
-          let isBull = false;
-
-          if (score === 25) {
-            isBull = true;
-            if (isBullType === 'inner' || activeMult === 2) {
-              if (bullType === 'fat') {
-                score = 50; finalMult = 1; label = "Bull(50)";
-              } else {
-                score = 50; finalMult = 2; label = "D-Bull";
-              }
-            } else {
-              if (bullType === 'fat') {
-                score = 50; finalMult = 1; label = "Bull(50)";
-              } else {
-                score = 25; finalMult = 1; label = "S-Bull(25)";
-              }
-            }
-          } else if (score === 0) {
-            finalMult = 0;
-            label = "Miss";
-          } else {
-            label = `${finalMult === 3 ? 'T' : finalMult === 2 ? 'D' : 'S'}${score}`;
-          }
-
-          let rx = 0, ry = 0;
-          if (isBull) {
-            // ブルの場合は中央座標付近にランダムあるいは固定配置（Wedges検索のバグ回避）
-            const distance = (label === "D-Bull" || isBullType === 'inner') ? 4 : 14;
-            const angleRad = Math.random() * Math.PI * 2;
-            rx = Math.round(distance * Math.cos(angleRad));
-            ry = Math.round(distance * Math.sin(angleRad));
-          } else if (score > 0) {
-            const distance = finalMult === 3 ? 101 : finalMult === 2 ? 165 : 133;
-            const idx = WEDGES.indexOf(score);
-            const angleRad = (idx * 18 - 90) * (Math.PI / 180);
-            rx = Math.round(distance * Math.cos(angleRad));
-            ry = Math.round(distance * Math.sin(angleRad));
-          }
-
-          const newThrow = { score, multiplier: finalMult, x: rx, y: ry, label, isBull };
-          let nextThrows = [...currentThrows];
-
-          if (editingThrowIndex !== null) {
-            nextThrows[editingThrowIndex] = newThrow;
-            setCurrentThrows(nextThrows);
-            setIsRoundBurst(checkIsBust(activePlayer.remainingScore, nextThrows));
-            setEditingThrowIndex(null);
-            playSound(finalMult === 3 ? 'hit-triple' : finalMult === 2 ? 'hit-double' : 'hit-single');
-            return;
-          }
-
-          if (currentThrows.length < 3) {
-            nextThrows.push(newThrow);
-            setCurrentThrows(nextThrows);
-            const isBust = checkIsBust(activePlayer.remainingScore, nextThrows);
-            setIsRoundBurst(isBust);
-            playSound(finalMult === 3 ? 'hit-triple' : finalMult === 2 ? 'hit-double' : isBull ? 'hit-bull' : 'hit-single');
-            if (isBust) playSound('burst');
-          }
-        };
-
-        const handleBoardClick = (e) => {
-          if (winner || isRoundBurst || confirmStage === 'next' || (currentThrows.length >= 3 && editingThrowIndex === null)) return;
-          if (!boardRef.current) return;
-
-          initAudio();
-          const rect = boardRef.current.getBoundingClientRect();
-          const centerX = rect.left + rect.width / 2;
-          const centerY = rect.top + rect.height / 2;
-          const scale = rect.width / 420;
-          const normX = (e.clientX - centerX) / scale;
-          const normY = (e.clientY - centerY) / scale;
-
-          const computedThrow = getThrowFromCoords(normX, normY);
-          playSound(computedThrow.multiplier === 3 ? 'hit-triple' : computedThrow.multiplier === 2 ? 'hit-double' : (computedThrow.isBull || computedThrow.label.includes("Bull")) ? 'hit-bull' : 'hit-single');
-
-          let nextThrows = [...currentThrows];
-          if (editingThrowIndex !== null) {
-            nextThrows[editingThrowIndex] = computedThrow;
-            setCurrentThrows(nextThrows);
-            setIsRoundBurst(checkIsBust(activePlayer.remainingScore, nextThrows));
-            setEditingThrowIndex(null);
-          } else {
-            nextThrows.push(computedThrow);
-            setCurrentThrows(nextThrows);
-            const isBust = checkIsBust(activePlayer.remainingScore, nextThrows);
-            setIsRoundBurst(isBust);
-            if (isBust) playSound('burst');
-          }
-        };
-
-        const handleUndoSingleDart = () => {
-          if (currentThrows.length === 0) return;
-          playSound('revert');
-          setCurrentThrows(currentThrows.slice(0, -1));
-          setIsRoundBurst(false);
-          setEditingThrowIndex(null);
-          setConfirmStage('throwing');
-        };
-
-        const handleFlushRound = () => {
-          playSound('revert');
-          if (confirmStage === 'next') {
-            const previousState = turnHistoryState[turnHistoryState.length - 1];
-            if (previousState) {
-              setPlayers(previousState.players);
-              setTurnHistoryState(turnHistoryState.slice(0, -1));
-            }
-          }
-          setCurrentThrows([]);
-          setIsRoundBurst(false);
-          setEditingThrowIndex(null);
-          setConfirmStage('throwing');
-        };
-
-        const handleUndoCommittedTurn = () => {
-          if (turnHistoryState.length === 0) return;
-          if (undoConfirmStage === 'idle') {
-            playSound('click');
-            setUndoConfirmStage('confirm');
-          } else {
-            playSound('revert');
-            const previousState = turnHistoryState[turnHistoryState.length - 1];
-            setPlayers(previousState.players);
-            setActivePlayerIndex(previousState.activePlayerIndex);
-            setCurrentThrows([]);
-            setIsRoundBurst(false);
-            setEditingThrowIndex(null);
-            setWinner(null);
-            setConfirmStage('throwing');
-            setUndoConfirmStage('idle');
-            setTurnHistoryState(turnHistoryState.slice(0, -1));
-          }
-        };
-
-        const handleCommitRound = () => {
-          if (winner) return;
-          if (confirmStage === 'throwing') {
-            if (currentThrows.length === 0) return;
-            initAudio();
-            const snapshot = { players: JSON.parse(JSON.stringify(players)), activePlayerIndex };
-            setTurnHistoryState(prev => [...prev, snapshot]);
-
-            const deductPoints = isRoundBurst ? 0 : getSubtotal(currentThrows);
-            const nextRemaining = Math.max(0, activePlayer.remainingScore - deductPoints);
-
-            const newRoundNode = {
-              roundNum: activePlayer.history.length + 1,
-              throws: currentThrows,
-              roundScore: deductPoints,
-              remainingScore: nextRemaining,
-              isBurst: isRoundBurst
-            };
-
-            const modifiedPlayers = players.map((p, idx) => {
-              if (idx === activePlayerIndex) {
-                return { ...p, remainingScore: nextRemaining, history: [newRoundNode, ...p.history] };
-              }
-              return p;
+          case "hit-double": {
+            [440, 523].forEach((f, idx) => {
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.type = "sine";
+              osc.frequency.setValueAtTime(f, now + idx * 0.03);
+              gain.gain.setValueAtTime(0.12, now + idx * 0.03);
+              gain.gain.exponentialRampToValueAtTime(1e-3, now + 0.3);
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start(now + idx * 0.03);
+              osc.stop(now + 0.35);
             });
+            break;
+          }
+          case "hit-triple": {
+            [587, 698, 880].forEach((f, idx) => {
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.type = "sine";
+              osc.frequency.setValueAtTime(f, now + idx * 0.04);
+              gain.gain.setValueAtTime(0.1, now + idx * 0.04);
+              gain.gain.exponentialRampToValueAtTime(1e-3, now + 0.4);
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start(now + idx * 0.04);
+              osc.stop(now + 0.45);
+            });
+            break;
+          }
+          case "hit-bull": {
+            const osc1 = ctx.createOscillator();
+            const osc2 = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc1.type = "sine";
+            osc1.frequency.setValueAtTime(880, now);
+            osc2.type = "sine";
+            osc2.frequency.setValueAtTime(1109, now);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(1e-3, now + 0.6);
+            osc1.connect(gain);
+            osc2.connect(gain);
+            gain.connect(ctx.destination);
+            osc1.start();
+            osc2.start();
+            osc1.stop(now + 0.65);
+            osc2.stop(now + 0.65);
+            break;
+          }
+          case "burst": {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sawtooth";
+            osc.frequency.setValueAtTime(140, now);
+            osc.frequency.exponentialRampToValueAtTime(45, now + 0.4);
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.exponentialRampToValueAtTime(1e-3, now + 0.4);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(now + 0.42);
+            break;
+          }
+          case "victory": {
+            const notes = [261, 329, 392, 523, 659, 783];
+            notes.forEach((f, idx) => {
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.type = "triangle";
+              osc.frequency.setValueAtTime(f, now + idx * 0.08);
+              gain.gain.setValueAtTime(0.08, now + idx * 0.08);
+              gain.gain.exponentialRampToValueAtTime(1e-3, now + 1.2);
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start(now + idx * 0.08);
+              osc.stop(now + 1.3);
+            });
+            break;
+          }
+        }
+      } catch (e) {
+        console.warn("Audio Context error", e);
+      }
+    };
 
-            setPlayers(modifiedPlayers);
+    const handleStartGame = () => {
+      playSound("revert");
+      setPlayers([
+        { id: "p1", name: players[0].name.trim() || "PLAYER 1", initialScore: p1StartScore, remainingScore: p1StartScore, history: [] },
+        { id: "p2", name: players[1].name.trim() || "PLAYER 2", initialScore: p2StartScore, remainingScore: p2StartScore, history: [] }
+      ]);
+      setActivePlayerIndex(0);
+      setCurrentThrows([]);
+      setEditingThrowIndex(null);
+      setPadMultiplier(1);
+      setTurnHistoryState([]);
+      setWinner(null);
+      setShowQuitConfirm(false);
+      setShowExitConfirm(false);
+      setShowSettingsSetup(false);
+      setConfirmStage("throwing");
+      setUndoConfirmStage("idle");
+    };
 
-            if (nextRemaining === 0) {
-              playSound('victory');
-              setWinner(modifiedPlayers[activePlayerIndex]);
-              setConfirmStage('throwing');
+    const handleKeypadTap = (score, specifiedMult, isBullType) => {
+      if (winner || confirmStage === "next") return;
+      if (editingThrowIndex === null && !canAddMoreThrows) return;
+      initAudio();
+      const activeMult = specifiedMult !== void 0 ? specifiedMult : padMultiplier;
+      let finalMult = activeMult;
+      let label = "";
+      let isBull = false;
+      if (score === 25) {
+        isBull = true;
+        if (isBullType === "inner" || activeMult === 2) {
+          if (bullType === "fat") {
+            score = 50;
+            finalMult = 1;
+            label = "Bull(50)";
+          } else {
+            score = 50;
+            finalMult = 2;
+            label = "D-Bull";
+          }
+        } else if (bullType === "fat") {
+          score = 50;
+          finalMult = 1;
+          label = "Bull(50)";
+        } else {
+          score = 25;
+          finalMult = 1;
+          label = "S-Bull(25)";
+        }
+      } else if (score === 0) {
+        finalMult = 0;
+        label = "Miss";
+      } else {
+        label = `${finalMult === 3 ? "T" : finalMult === 2 ? "D" : "S"}${score}`;
+      }
+      let rx = 0;
+      let ry = 0;
+      if (isBull) {
+        const distance = label === "D-Bull" || isBullType === "inner" ? 4 : 14;
+        const angleRad = Math.random() * Math.PI * 2;
+        rx = Math.round(distance * Math.cos(angleRad));
+        ry = Math.round(distance * Math.sin(angleRad));
+      } else if (score > 0) {
+        const distance = finalMult === 3 ? 101 : finalMult === 2 ? 165 : 133;
+        const idx = WEDGES.indexOf(score);
+        const angleRad = (idx * 18 - 90) * (Math.PI / 180);
+        rx = Math.round(distance * Math.cos(angleRad));
+        ry = Math.round(distance * Math.sin(angleRad));
+      }
+      const newThrow = { score, multiplier: finalMult, x: rx, y: ry, label, isBull };
+      const nextThrows = editingThrowIndex !== null ? currentThrows.map((t, idx) => idx === editingThrowIndex ? newThrow : t) : [...currentThrows, newThrow];
+      setCurrentThrows(nextThrows);
+      if (editingThrowIndex !== null) {
+        setEditingThrowIndex(null);
+      }
+      playSound(getHitSoundType(newThrow));
+      const nextRoundState = getRoundState(activePlayer.remainingScore, nextThrows, outMode);
+      if (nextRoundState.isBust) {
+        playSound("burst");
+      }
+    };
+
+    const handleBoardClick = (e) => {
+      if (winner || confirmStage === "next") return;
+      if (editingThrowIndex === null && !canAddMoreThrows) return;
+      if (!boardRef.current) return;
+      initAudio();
+      const rect = boardRef.current.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const scale = rect.width / 420;
+      
+      const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+      
+      const normX = (clientX - centerX) / scale;
+      const normY = (clientY - centerY) / scale;
+
+      const computedThrow = getThrowFromCoords(normX, normY, bullType);
+      const nextThrows = editingThrowIndex !== null ? currentThrows.map((t, idx) => idx === editingThrowIndex ? computedThrow : t) : [...currentThrows, computedThrow];
+      setCurrentThrows(nextThrows);
+      if (editingThrowIndex !== null) {
+        setEditingThrowIndex(null);
+      }
+      playSound(getHitSoundType(computedThrow));
+      const nextRoundState = getRoundState(activePlayer.remainingScore, nextThrows, outMode);
+      if (nextRoundState.isBust) {
+        playSound("burst");
+      }
+    };
+
+    const handleUndoSingleDart = () => {
+      if (currentThrows.length === 0) return;
+      playSound("revert");
+      const nextThrows = currentThrows.slice(0, -1);
+      setCurrentThrows(nextThrows);
+      setEditingThrowIndex(null);
+      setConfirmStage("throwing");
+    };
+
+    const handleFlushRound = () => {
+      playSound("revert");
+      if (confirmStage === "next") {
+        const previousState = turnHistoryState[turnHistoryState.length - 1];
+        if (previousState) {
+          setPlayers(previousState.players);
+          setActivePlayerIndex(previousState.activePlayerIndex);
+          setTurnHistoryState(turnHistoryState.slice(0, -1));
+        }
+      }
+      setCurrentThrows([]);
+      setEditingThrowIndex(null);
+      setConfirmStage("throwing");
+      setUndoConfirmStage("idle");
+    };
+
+    const handleUndoCommittedTurn = () => {
+      if (turnHistoryState.length === 0) return;
+      if (undoConfirmStage === "idle") {
+        playSound("click");
+        setUndoConfirmStage("confirm");
+      } else {
+        playSound("revert");
+        const previousState = turnHistoryState[turnHistoryState.length - 1];
+        setPlayers(previousState.players);
+        setActivePlayerIndex(previousState.activePlayerIndex);
+        setCurrentThrows([]);
+        setEditingThrowIndex(null);
+        setWinner(null);
+        setConfirmStage("throwing");
+        setUndoConfirmStage("idle");
+        setTurnHistoryState(turnHistoryState.slice(0, -1));
+      }
+    };
+
+    const handleCommitRound = () => {
+      if (winner) return;
+      if (confirmStage === "throwing") {
+        if (currentThrows.length === 0) return;
+        initAudio();
+        const snapshot = { players: cloneDeep(players), activePlayerIndex };
+        setTurnHistoryState((prev) => [...prev, snapshot]);
+        const deductPoints = roundState.subtotal;
+        const nextRemaining = roundState.remainingScore;
+        const newRoundNode = {
+          roundNum: activePlayer.history.length + 1,
+          throws: currentThrows,
+          roundScore: deductPoints,
+          remainingScore: nextRemaining,
+          isBurst: roundState.isBust
+        };
+        const modifiedPlayers = players.map((p, idx) => {
+          if (idx === activePlayerIndex) {
+            return { ...p, remainingScore: nextRemaining, history: [newRoundNode, ...p.history] };
+          }
+          return p;
+        });
+        setPlayers(modifiedPlayers);
+        if (nextRemaining === 0) {
+          playSound("victory");
+          setWinner(modifiedPlayers[activePlayerIndex]);
+          setConfirmStage("throwing");
+        } else {
+          playSound("click");
+          setConfirmStage("next");
+        }
+      } else if (confirmStage === "next") {
+        playSound("click");
+        setActivePlayerIndex(activePlayerIndex === 0 ? 1 : 0);
+        setCurrentThrows([]);
+        setEditingThrowIndex(null);
+        setConfirmStage("throwing");
+      }
+    };
+
+    const handleBackToMenuRequest = () => {
+      const isGameStarted = players[0].history.length > 0 || players[1].history.length > 0 || currentThrows.length > 0;
+      if (isGameStarted) {
+        playSound("click");
+        setShowExitConfirm(true);
+      } else {
+        playSound("revert");
+        setShowSettingsSetup(true);
+      }
+    };
+
+    const currentActiveRemaining = confirmStage === "next" ? activePlayer.remainingScore : roundState.remainingScore;
+    const currentRoundSubtotal = roundState.subtotal;
+
+    const p1DisplayScore = activePlayerIndex === 0 ? currentActiveRemaining : players[0].remainingScore;
+    const p2DisplayScore = activePlayerIndex === 1 ? currentActiveRemaining : players[1].remainingScore;
+
+    // 【超重要バグ修正】常に3要素を持つ配列を保証し、interactiveSteps.map が絶対にクラッシュしないようにする設計
+    const getInteractiveArrangementSteps = () => {
+      const remainingAtStart = activePlayer.remainingScore;
+      const originalRoute = getSteelDartsArrangement(remainingAtStart, bullType);
+      
+      const fallbackArray = [
+        { target: "-", hit: null, status: "pending" },
+        { target: "-", hit: null, status: "pending" },
+        { target: "-", hit: null, status: "pending" }
+      ];
+
+      if (!originalRoute || originalRoute.includes("No finish") || originalRoute.includes("Score >") || originalRoute.includes("No checkout")) {
+        // 残り点数が未チェックアウト帯の場合はすべて pending 状態のハイフン配列を返す
+        return fallbackArray;
+      }
+      
+      const rawSteps = originalRoute.split(" - ");
+      let currentRemaining = remainingAtStart;
+      let hasDeviated = false;
+      
+      const calculatedSteps = [];
+      
+      for (let i = 0; i < 3; i++) {
+        const theoreticalTarget = rawSteps[i];
+        const actualThrow = currentThrows[i];
+        
+        if (actualThrow) {
+          const isCorrectHit = Boolean(
+            theoreticalTarget && (
+              actualThrow.label === theoreticalTarget || 
+              (theoreticalTarget === "Bull" && actualThrow.isBull) ||
+              (theoreticalTarget === "D-Bull" && actualThrow.label === "D-Bull") ||
+              (theoreticalTarget === "S-Bull" && actualThrow.label.includes("Bull"))
+            )
+          );
+
+          calculatedSteps.push({
+            target: theoreticalTarget || "-",
+            hit: actualThrow.label,
+            status: "completed",
+            isCorrect: isCorrectHit,
+            scoreRemainingAfter: currentRemaining - (actualThrow.score * actualThrow.multiplier)
+          });
+          currentRemaining -= (actualThrow.score * actualThrow.multiplier);
+          if (theoreticalTarget && !isCorrectHit) {
+            hasDeviated = true;
+          }
+        } else {
+          if (hasDeviated && currentRemaining > 0 && currentRemaining <= 170) {
+            const recoveryRoute = getSteelDartsArrangement(currentRemaining, bullType);
+            if (recoveryRoute && !recoveryRoute.includes("No")) {
+              const recoverySteps = recoveryRoute.split(" - ");
+              const nextRecoveryTarget = recoverySteps[0] || "-";
+              calculatedSteps.push({
+                target: nextRecoveryTarget,
+                hit: null,
+                status: "active",
+                isRecovery: true
+              });
             } else {
-              playSound('click');
-              setConfirmStage('next');
+              calculatedSteps.push({
+                target: "SETUP",
+                hit: null,
+                status: "active",
+                isRecovery: true
+              });
             }
-          } else if (confirmStage === 'next') {
-            playSound('click');
-            setActivePlayerIndex(activePlayerIndex === 0 ? 1 : 0);
-            setCurrentThrows([]);
-            setIsRoundBurst(false);
-            setEditingThrowIndex(null);
-            setConfirmStage('throwing');
+            hasDeviated = false; // 以降のループステップでは追加でリカバリーフラグを立てない
+          } else {
+            calculatedSteps.push({
+              target: theoreticalTarget || "-",
+              hit: null,
+              status: i === currentThrows.length ? "active" : "pending"
+            });
           }
-        };
-
-        const currentActiveRemaining = confirmStage === 'next'
-          ? activePlayer.remainingScore
-          : activePlayer.remainingScore - (isRoundBurst ? 0 : getSubtotal(currentThrows));
-
-        const renderFliqloTile = (score, isActive, isBust) => {
-          const digits = score === 0 ? 1 : String(score).length;
-          const sizeClass = digits <= 2
-            ? 'text-6xl sm:text-7xl md:text-8xl'
-            : 'text-4xl sm:text-5xl md:text-6xl';
-          return (
-            <div className={`relative flex flex-col items-center justify-center rounded-2xl md:rounded-3xl bg-[#121215] border border-zinc-800 px-3 py-3 md:py-5 select-none transition-all duration-300 overflow-hidden ${
-              isActive 
-                ? 'shadow-[0_0_35px_rgba(245,158,11,0.25)] ring-2 ring-amber-500/50' 
-                : 'shadow-[0_15px_30px_rgba(0,0,0,0.8)]'
-            }`}>
-              
-              {/* パタパタ時計特有の中央の分割スリット（水平線） */}
-              <div className="absolute inset-x-0 top-1/2 h-[2px] bg-[#040406] z-10 opacity-90 shadow-[0_1px_1px_rgba(255,255,255,0.05)]" />
-
-              {/* 上半分グラデーション陰影 */}
-              <div className="absolute top-0 inset-x-0 h-1/2 bg-gradient-to-b from-white/[0.02] to-transparent rounded-t-2xl md:rounded-t-3xl pointer-events-none" />
-
-              {/* スコア数字 — 桁数によってサイズが変わる */}
-              <span className={`${sizeClass} font-fliqlo font-black leading-none tracking-tighter ${
-                isBust ? 'text-rose-500' : 'text-neutral-100'
-              }`}>
-                {score}
-              </span>
-            </div>
-          );
-        };
-
-        const renderArrangementTokens = (arrStr) => {
-          if (!arrStr || arrStr.includes("No finish") || arrStr.includes("BOGEY") || arrStr.includes("No checkout")) {
-            return <span className="text-zinc-500 font-mono text-[11px] md:text-sm font-bold tracking-widest">{arrStr || "No checkout"}</span>;
-          }
-          const tokens = arrStr.split(" - ");
-          return (
-            <div className="inline-flex items-center space-x-2 md:space-x-3 font-fliqlo font-black text-sm xs:text-base md:text-xl">
-              {tokens.map((tok, idx) => {
-                let badgeColor = "text-white";
-                if (tok.startsWith("T")) {
-                  badgeColor = "text-emerald-400 font-extrabold drop-shadow-[0_0_6px_rgba(52,211,153,0.3)]";
-                } else if (tok.startsWith("D") || tok.includes("Bull")) {
-                  badgeColor = "text-rose-500 font-extrabold drop-shadow-[0_0_6px_rgba(244,63,94,0.3)]";
-                }
-                return (
-                  <React.Fragment key={idx}>
-                    {idx > 0 && <span className="text-zinc-500 font-sans font-normal">-</span>}
-                    <span className={badgeColor}>{tok}</span>
-                  </React.Fragment>
-                );
-              })}
-            </div>
-          );
-        };
-
-        return (
-          <div className="min-h-[100dvh] w-full bg-[#050508] text-amber-100 flex flex-col justify-between select-none antialiased overflow-y-auto font-sans relative pb-8">
-            <div className="fixed inset-0 bg-gradient-to-b from-zinc-950 via-[#0a0a0f] to-[#040406] z-0 pointer-events-none" />
-
-            {/* HEADER */}
-            <header className="relative z-30 border-b border-zinc-900 bg-[#09090c]/90 backdrop-blur px-3.5 py-3 flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-2">
-                <div className="w-6.5 h-6.5 rounded-full border border-amber-500/30 bg-neutral-950 flex items-center justify-center shadow-lg shadow-amber-500/5">
-                  <span className="text-amber-400 font-black text-[11px] tracking-tighter">BAR</span>
-                </div>
-                <div>
-                  <h1 className="text-[11px] font-black tracking-widest text-amber-400 leading-none uppercase">PUB DARTS CABIN</h1>
-                  <p className="text-[8px] text-zinc-500 font-mono mt-0.5 tracking-wider uppercase">Fliqlo Stereoscopic Edition</p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-1.5 rounded-lg bg-[#141419] border border-zinc-800 text-zinc-400 hover:text-amber-400 hover:border-amber-500/30 transition cursor-pointer">
-                  {soundEnabled ? <span className="text-emerald-500"><Icons.Volume2 /></span> : <span className="text-zinc-500"><Icons.VolumeX /></span>}
-                </button>
-                <button onClick={() => setShowHowTo(true)} className="p-1.5 rounded-lg bg-[#141419] border border-zinc-800 text-amber-500/90 flex items-center gap-1 text-[9px] font-bold cursor-pointer hover:border-amber-500/30">
-                  <Icons.HelpCircle />
-                  <span>ヘルプ</span>
-                </button>
-                <button onClick={() => setShowSettingsSetup(!showSettingsSetup)} className={`px-2.5 py-1 rounded-lg border text-[9px] font-bold transition flex items-center gap-1 cursor-pointer ${showSettingsSetup ? 'bg-amber-600/20 border-amber-500 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.15)]' : 'bg-[#141419] border-zinc-800 text-zinc-400 hover:text-amber-400 hover:border-amber-500/30'}`}>
-                  <Icons.Settings />
-                  <span>メニューに戻る</span>
-                </button>
-              </div>
-            </header>
-
-            {/* MAIN CONTENT AREA */}
-            <main className="flex-grow flex flex-col lg:flex-row justify-center items-stretch relative z-10 p-2 md:p-4 gap-4 max-w-5xl mx-auto w-full">
-              
-              {/* SETTINGS SETUP PANEL */}
-              {showSettingsSetup && (
-                <div className="fixed inset-0 z-40 bg-black/95 backdrop-blur-md flex items-end sm:items-center justify-center">
-                  <div className="w-full max-w-sm bg-[#0d0d12] border border-zinc-800 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
-                    
-                    <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-zinc-800/60">
-                      <div>
-                        <h2 className="text-sm font-black tracking-widest text-amber-400 uppercase leading-none">🎯 GAME SETUP</h2>
-                        <p className="text-[9px] text-zinc-500 font-mono mt-0.5">ゲーム設定</p>
-                      </div>
-                      {players[0].history.length > 0 && (
-                        <button onClick={() => setShowSettingsSetup(false)} className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-500 cursor-pointer">
-                          <Icons.X />
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="p-4 space-y-4">
-                      <div className="grid grid-cols-2 gap-2">
-                        {[0, 1].map(i => (
-                          <div key={i} className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-3 space-y-2">
-                            <input
-                              type="text" maxLength={10}
-                              value={players[i].name}
-                              onChange={(e) => {
-                                const updated = [...players];
-                                updated[i] = { ...updated[i], name: e.target.value.toUpperCase() };
-                                setPlayers(updated);
-                              }}
-                              className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-2 text-xs text-amber-200 outline-none uppercase font-black text-center tracking-wider"
-                              placeholder={`P${i+1} NAME`}
-                            />
-                            <div className="flex items-center justify-between gap-1">
-                              <div className="flex flex-col gap-1">
-                                <button onClick={() => { playSound('click'); if (i === 0) setP1StartScore(p => Math.max(11, p - 10)); else setP2StartScore(p => Math.max(11, p - 10)); }} className="w-8 h-6 rounded bg-zinc-950 border border-zinc-700 text-zinc-500 text-[10px] font-black cursor-pointer flex items-center justify-center">-10</button>
-                                <button onClick={() => { playSound('click'); if (i === 0) setP1StartScore(p => Math.max(11, p - 1)); else setP2StartScore(p => Math.max(11, p - 1)); }} className="w-8 h-6 rounded bg-zinc-950 border border-zinc-700 text-zinc-400 text-[10px] font-black cursor-pointer flex items-center justify-center">-1</button>
-                              </div>
-                              <span className="text-lg font-black font-mono text-white">{i === 0 ? p1StartScore : p2StartScore}</span>
-                              <div className="flex flex-col gap-1">
-                                <button onClick={() => { playSound('click'); if (i === 0) setP1StartScore(p => Math.min(999, p + 10)); else setP2StartScore(p => Math.min(999, p + 10)); }} className="w-8 h-6 rounded bg-zinc-950 border border-zinc-700 text-zinc-500 text-[10px] font-black cursor-pointer flex items-center justify-center">+10</button>
-                                <button onClick={() => { playSound('click'); if (i === 0) setP1StartScore(p => Math.min(999, p + 1)); else setP2StartScore(p => Math.min(999, p + 1)); }} className="w-8 h-6 rounded bg-zinc-950 border border-zinc-700 text-zinc-400 text-[10px] font-black cursor-pointer flex items-center justify-center">+1</button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2">
-                        {[301, 501, 701].map(score => (
-                          <button key={score} onClick={() => { playSound('click'); setP1StartScore(score); setP2StartScore(score); }}
-                            className={`py-2.5 rounded-xl text-sm font-black border transition cursor-pointer ${p1StartScore === score && p2StartScore === score ? 'bg-amber-500 border-amber-400 text-black' : 'bg-zinc-900/60 border-zinc-700 text-zinc-400 hover:text-amber-400'}`}>
-                            {score}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-zinc-500 font-bold w-16 shrink-0">BULL</span>
-                          <div className="flex-1 grid grid-cols-2 gap-1.5">
-                            {[['separate','セパ (外25)'],['fat','ファット (外50)']].map(([val, label]) => (
-                              <button key={val} onClick={() => { playSound('click'); setBullType(val); }}
-                                className={`py-2 rounded-lg text-[10px] font-black transition cursor-pointer border ${bullType === val ? 'bg-amber-500 border-amber-400 text-black' : 'bg-zinc-900/60 border-zinc-700 text-zinc-400'}`}>
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-zinc-500 font-bold w-16 shrink-0">OUT</span>
-                          <div className="flex-1 grid grid-cols-3 gap-1.5">
-                            {['single','double','master'].map(m => (
-                              <button key={m} onClick={() => { playSound('click'); setOutMode(m); }}
-                                className={`py-2 rounded-lg text-[10px] font-black uppercase transition cursor-pointer border ${outMode === m ? 'bg-amber-950 border-amber-500 text-amber-300' : 'bg-zinc-900/60 border-zinc-700 text-zinc-500'}`}>
-                                {m}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      {showQuitConfirm ? (
-                        <div className="space-y-2">
-                          <p className="text-center text-xs font-bold text-rose-400 bg-rose-950/40 border border-rose-900/50 rounded-xl py-3 px-2">
-                            ⚠️ 現在のゲームを終了して<br/>新しいゲームを始めますか？
-                          </p>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button onClick={() => setShowQuitConfirm(false)}
-                              className="py-3 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-400 font-black text-xs cursor-pointer">
-                              キャンセル
-                            </button>
-                            <button onClick={() => { setShowQuitConfirm(false); handleStartGame(); }}
-                              className="py-3 rounded-xl bg-rose-600 border border-rose-500 text-white font-black text-xs cursor-pointer">
-                              新しいゲーム開始
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button onClick={() => {
-                          if (players[0].history.length > 0 || players[1].history.length > 0) {
-                            setShowQuitConfirm(true);
-                          } else {
-                            handleStartGame();
-                          }
-                        }}
-                          className="w-full py-4 bg-gradient-to-r from-amber-400 to-amber-500 border border-amber-300 text-black font-black text-sm rounded-xl transition uppercase cursor-pointer shadow-lg shadow-amber-500/10 tracking-widest">
-                          対戦開始 START 🎯
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* GAME VIEWPORT */}
-              <div className="flex-grow flex flex-col justify-center items-center min-h-0 w-full lg:max-w-xl">
-                
-                {/* 1. リアルタイム・アレンジ・ディスプレイ */}
-                <div className="w-full text-center py-1 shrink-0 z-20">
-                  <div className="text-[8px] font-mono font-black text-zinc-500 tracking-widest mb-1 uppercase">ARRANGE ROUTE</div>
-                  <div className="min-h-10 flex items-center justify-center bg-[#09090c]/85 border border-zinc-800 px-4 py-2 rounded-xl max-w-xs mx-auto shadow-inner">
-                    {currentActiveRemaining <= 170 ? (
-                      renderArrangementTokens(getDartsArrangement(currentActiveRemaining))
-                    ) : (
-                      <span className="text-zinc-600 font-mono text-xs tracking-widest uppercase font-bold">Score &gt; 170</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 2. PLAYERS' SCORES AND CENTRAL BOARD */}
-                <div className="w-full flex items-center justify-center relative my-auto py-1.5 md:py-3 select-none">
-                  
-                  {/* PLAYER 1 BOX (LEFT SIDE) */}
-                  <div className="absolute left-0 w-[42%] z-10 transition-transform duration-300">
-                    <div className="text-left pl-2 mb-1.5 flex items-center justify-between">
-                      <span className="text-[9px] md:text-xs font-black text-zinc-400 block tracking-widest truncate max-w-[70px] uppercase">{players[0].name}</span>
-                      {activePlayerIndex === 0 && <span className="text-[10px] text-amber-500 animate-ping">●</span>}
-                    </div>
-                    {renderFliqloTile(players[0].remainingScore, activePlayerIndex === 0, isRoundBurst && activePlayerIndex === 0)}
-                    
-                    {/* 履歴 */}
-                    <div className="mt-2 bg-[#09090c]/90 border border-zinc-900 rounded-xl overflow-hidden shadow-[0_10px_20px_rgba(0,0,0,0.4)]">
-                      <span className="text-[8px] font-mono text-zinc-500 block text-center border-b border-zinc-900 py-1 font-bold tracking-widest uppercase">HISTORY</span>
-                      <div className="overflow-y-auto max-h-24 no-scrollbar">
-                        {players[0].history.length === 0 ? (
-                          <div className="text-zinc-700 italic text-center py-3 text-[8px]">— no rounds —</div>
-                        ) : (
-                          players[0].history.map((h, idx) => (
-                            <div key={idx} className={`flex items-center justify-between px-2 py-1 border-b border-zinc-900/50 last:border-0 ${h.isBurst ? 'opacity-40' : ''}`}>
-                              <span className="text-[8px] font-bold text-zinc-600 w-5 shrink-0">R{h.roundNum}</span>
-                              <span className={`text-[8px] font-mono flex-1 text-center truncate px-1 ${h.isBurst ? 'text-rose-500 line-through' : 'text-zinc-400'}`}>
-                                {h.throws.map(t => t.label).join(' · ')}
-                              </span>
-                              <span className={`text-[9px] font-black w-12 text-right shrink-0 ${h.isBurst ? 'text-rose-500' : 'text-amber-400'}`}>
-                                {h.isBurst ? 'BURST' : h.roundScore}
-                              </span>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* CENTRAL DARTBOARD */}
-                  <div className="relative w-[50%] aspect-square z-20 flex items-center justify-center pointer-events-auto">
-                    <div className="absolute inset-0 rounded-full bg-black/60 blur-md pointer-events-none transform translate-y-2" />
-                    <svg ref={boardRef} onClick={handleBoardClick} viewBox="-210 -210 420 420" className="w-full h-full drop-shadow-[0_15px_30px_rgba(0,0,0,0.95)] overflow-visible cursor-crosshair">
-                      <circle r="195" fill="#0c0c10" stroke="#1c1c24" strokeWidth="3" />
-                      <circle r="176" fill="none" stroke="#2c2c36" strokeWidth="0.8" />
-                      <circle r="154" fill="none" stroke="#2c2c36" strokeWidth="0.8" />
-                      <circle r="112" fill="none" stroke="#2c2c36" strokeWidth="0.8" />
-                      <circle r="90" fill="none" stroke="#2c2c36" strokeWidth="0.8" />
-                      
-                      {WEDGES.map((w, i) => {
-                        const angle = i * 18 - 90;
-                        const radStart = (angle - 9) * Math.PI / 180;
-                        const radEnd = (angle + 9) * Math.PI / 180;
-                        const isEven = i % 2 === 0;
-
-                        const buildPath = (r1, r2) => {
-                          const x1 = r1 * Math.cos(radStart), y1 = r1 * Math.sin(radStart);
-                          const x2 = r2 * Math.cos(radStart), y2 = r2 * Math.sin(radStart);
-                          const x3 = r2 * Math.cos(radEnd), y3 = r2 * Math.sin(radEnd);
-                          const x4 = r1 * Math.cos(radEnd), y4 = r1 * Math.sin(radEnd);
-                          return `M ${x1} ${y1} L ${x2} ${y2} A ${r2} ${r2} 0 0 1 ${x3} ${y3} L ${x4} ${y4} A ${r1} ${r1} 0 0 0 ${x1} ${y1} Z`;
-                        };
-
-                        const textAngle = angle * Math.PI / 180;
-                        const tx = 185 * Math.cos(textAngle);
-                        const ty = 185 * Math.sin(textAngle);
-
-                        return (
-                          <g key={w}>
-                            <path d={buildPath(112, 154)} fill={isEven ? "#09090c" : "#eaeaea"} stroke="#222" strokeWidth="0.5" />
-                            <path d={buildPath(22, 90)} fill={isEven ? "#09090c" : "#eaeaea"} stroke="#222" strokeWidth="0.5" />
-                            <path d={buildPath(154, 176)} fill={isEven ? "#e11d48" : "#16a34a"} stroke="#222" strokeWidth="0.5" />
-                            <path d={buildPath(90, 112)} fill={isEven ? "#e11d48" : "#16a34a"} stroke="#222" strokeWidth="0.5" />
-                            <text x={tx} y={ty} textAnchor="middle" dominantBaseline="central" fill="#f59e0b" fontSize="13" fontWeight="900" transform={`rotate(${angle + 90}, ${tx}, ${ty})`}>{w}</text>
-                          </g>
-                        );
-                      })}
-
-                      <circle r="22" fill="#16a34a" stroke="#222" strokeWidth="0.5" />
-                      <circle r="8.5" fill="#e11d48" stroke="#222" strokeWidth="0.5" />
-
-                      {currentThrows.map((t, idx) => (
-                        <circle key={idx} cx={t.x} cy={t.y} r="6.5" fill={idx === editingThrowIndex ? "#38bdf8" : "#f59e0b"} stroke="white" strokeWidth="2.5" className="transition-all duration-150" />
-                      ))}
-                    </svg>
-                  </div>
-
-                  {/* PLAYER 2 BOX (RIGHT SIDE) */}
-                  <div className="absolute right-0 w-[42%] z-10 transition-transform duration-300">
-                    <div className="text-right pr-2 mb-1.5 flex items-center justify-between">
-                      {activePlayerIndex === 1 && <span className="text-[10px] text-amber-500 animate-ping">●</span>}
-                      <span className="text-[9px] md:text-xs font-black text-zinc-400 block tracking-widest truncate max-w-[70px] ml-auto uppercase">{players[1].name}</span>
-                    </div>
-                    {renderFliqloTile(players[1].remainingScore, activePlayerIndex === 1, isRoundBurst && activePlayerIndex === 1)}
-
-                    {/* 履歴 */}
-                    <div className="mt-2 bg-[#09090c]/90 border border-zinc-900 rounded-xl overflow-hidden shadow-[0_10px_20px_rgba(0,0,0,0.4)]">
-                      <span className="text-[8px] font-mono text-zinc-500 block text-center border-b border-zinc-900 py-1 font-bold tracking-widest uppercase">HISTORY</span>
-                      <div className="overflow-y-auto max-h-24 no-scrollbar">
-                        {players[1].history.length === 0 ? (
-                          <div className="text-zinc-700 italic text-center py-3 text-[8px]">— no rounds —</div>
-                        ) : (
-                          players[1].history.map((h, idx) => (
-                            <div key={idx} className={`flex items-center justify-between px-2 py-1 border-b border-zinc-900/50 last:border-0 ${h.isBurst ? 'opacity-40' : ''}`}>
-                              <span className="text-[8px] font-bold text-zinc-600 w-5 shrink-0">R{h.roundNum}</span>
-                              <span className={`text-[8px] font-mono flex-1 text-center truncate px-1 ${h.isBurst ? 'text-rose-500 line-through' : 'text-zinc-400'}`}>
-                                {h.throws.map(t => t.label).join(' · ')}
-                              </span>
-                              <span className={`text-[9px] font-black w-12 text-right shrink-0 ${h.isBurst ? 'text-rose-500' : 'text-amber-400'}`}>
-                                {h.isBurst ? 'BURST' : h.roundScore}
-                              </span>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* 3. DART THROWS INDICATOR */}
-                <div className="w-full max-w-sm mt-2 bg-zinc-900/40 p-2 rounded-xl border border-zinc-800 flex justify-between items-center relative z-20">
-                  <div className="flex gap-1.5">
-                    {[0, 1, 2].map(idx => {
-                      const t = currentThrows[idx];
-                      return (
-                        <div key={idx} onClick={() => currentThrows[idx] && setEditingThrowIndex(idx)} className={`w-14 h-10 rounded-lg flex flex-col justify-center items-center font-mono cursor-pointer transition-all ${editingThrowIndex === idx ? 'bg-sky-500/20 border border-sky-400 text-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.25)]' : t ? 'bg-[#18181f] border border-amber-500/30 text-white' : 'bg-black/40 border border-zinc-800 text-zinc-700'}`}>
-                          <span className="text-[7px] block text-zinc-500 uppercase leading-none mb-0.5">Dart {idx+1}</span>
-                          <span className="text-sm font-black">{t ? t.label : '-'}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="text-right pr-1">
-                    <span className="text-[7.5px] text-zinc-500 block uppercase font-bold tracking-wider leading-none mb-0.5">Round Sum</span>
-                    <span className={`text-lg font-black font-mono leading-none ${isRoundBurst ? 'line-through text-rose-500' : 'text-amber-400'}`}>
-                      {isRoundBurst ? 'BURST' : getSubtotal(currentThrows)}
-                    </span>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* INPUT CONTROLS PANEL */}
-              <div className="w-full lg:w-[410px] shrink-0 flex flex-col justify-center relative z-20">
-
-                <div className="w-full mt-2 bg-[#09090d]/80 p-3 rounded-2xl border border-zinc-800 shadow-2xl backdrop-blur-md">
-                  <div className="grid grid-cols-12 gap-2.5">
-                    
-                    {/* LEFT SLOT */}
-                    <div className="col-span-9 flex flex-col gap-3">
-                      <div className="grid grid-cols-3 gap-1.5 p-1 bg-black/40 rounded-xl border border-zinc-800">
-                        <button onClick={() => { playSound('click'); setPadMultiplier(1); }} className={`py-3 rounded-lg text-xs font-black uppercase cursor-pointer transition-all border ${
-                          padMultiplier === 1 
-                            ? 'bg-amber-500 border-amber-400 text-black shadow-[0_3px_8px_rgba(245,158,11,0.2)] font-extrabold translate-y-[-1px]' 
-                            : 'bg-transparent text-zinc-500 border-transparent active:translate-y-0.5'
-                        }`}>Single</button>
-                        
-                        <button onClick={() => { playSound('click'); setPadMultiplier(2); }} className={`py-3 rounded-lg text-xs font-black uppercase cursor-pointer transition-all border ${
-                          padMultiplier === 2 
-                            ? 'bg-rose-600 border-rose-500 text-white shadow-[0_3px_8px_rgba(225,29,72,0.25)] font-extrabold translate-y-[-1px]' 
-                            : 'bg-transparent text-zinc-500 border-transparent active:translate-y-0.5'
-                        }`}>Double</button>
-                        
-                        <button onClick={() => { playSound('click'); setPadMultiplier(3); }} className={`py-3 rounded-lg text-xs font-black uppercase cursor-pointer transition-all border ${
-                          padMultiplier === 3 
-                            ? 'bg-emerald-600 border-emerald-500 text-white shadow-[0_3px_8px_rgba(16,185,129,0.25)] font-extrabold translate-y-[-1px]' 
-                            : 'bg-transparent text-zinc-500 border-transparent active:translate-y-0.5'
-                        }`}>Triple</button>
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <div className="grid grid-cols-6 gap-1.5 bg-amber-500/5 p-1.5 rounded-xl border border-amber-500/10">
-                          {[20, 19, 18, 17, 16, 15].map(num => (
-                            <button
-                              key={num}
-                              onClick={() => handleKeypadTap(num)}
-                              className="w-11 h-11 md:w-13 md:h-13 rounded-xl flex items-center justify-center font-black font-mono text-sm md:text-base bg-zinc-950 border border-amber-500/25 text-amber-300 hover:border-amber-400 active:translate-y-0.5 transition-all shadow-[0_4px_10px_rgba(0,0,0,0.5)] cursor-pointer"
-                            >
-                              {num}
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="grid grid-cols-5 gap-1.5 justify-items-center">
-                          {[
-                            14, 13, 12, 11, 10,
-                            9, 8, 7, 6, 5,
-                            4, 3, 2, 1, 0
-                          ].map(num => (
-                            <button
-                              key={num}
-                              onClick={() => handleKeypadTap(num)}
-                              className={`w-11 h-11 md:w-13 md:h-13 rounded-xl flex items-center justify-center font-black font-mono text-sm md:text-base active:translate-y-0.5 transition-all cursor-pointer shadow-[0_4px_10px_rgba(0,0,0,0.5)] border ${
-                                num === 0 
-                                  ? 'bg-[#18181f] border-rose-900/60 text-rose-400 hover:bg-zinc-800' 
-                                  : 'bg-zinc-950 border-zinc-800 text-zinc-200 hover:border-zinc-500'
-                              }`}
-                            >
-                              {num}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* RIGHT SLOT: BULL BUTTONS */}
-                    <div className="col-span-3 flex flex-col justify-between gap-2 self-stretch">
-                      <button 
-                        onClick={() => handleKeypadTap(25, 1, 'outer')} 
-                        className="flex-1 rounded-xl font-mono font-black uppercase border-2 flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 border-[#16a34a] text-[#16a34a] hover:bg-emerald-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)]"
-                        title={bullType === 'fat' ? "アウターブル(50点)" : "アウターブル(25点)"}
-                      >
-                        <span className="text-4xl leading-none font-black text-[#16a34a]">○</span>
-                        <span className="leading-tight text-xs font-black tracking-tight">OUT<br/>BULL</span>
-                        <span className="text-base font-black text-zinc-200">{bullType === 'fat' ? "50" : "25"}</span>
-                      </button>
-
-                      <button 
-                        onClick={() => handleKeypadTap(25, 2, 'inner')} 
-                        className="flex-1 rounded-xl font-mono font-black uppercase border flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 border-rose-900/70 text-rose-400 hover:bg-rose-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)]"
-                        title="インナーブル(50点)"
-                      >
-                        <span className="text-3xl">🔴</span>
-                        <span className="leading-tight text-xs font-black tracking-tight">IN<br/>BULL</span>
-                        <span className="text-base font-black text-zinc-200">50</span>
-                      </button>
-                    </div>
-
-                  </div>
-
-                  {/* BOTTOM ACTION BUTTONS */}
-                  <div className="mt-4 pt-3 border-t border-zinc-800 space-y-2.5">
-                    {isRoundBurst && (
-                      <div className="w-full py-3 rounded-xl bg-rose-950/60 border-2 border-rose-500/70 text-center">
-                        <span className="text-rose-400 font-black text-base tracking-widest">💥 BURST — 得点なし</span>
-                        <p className="text-rose-500/70 text-[10px] mt-0.5">「リセット」で入力し直すか、そのまま確定できます</p>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-3 gap-2">
-                      <button 
-                        onClick={() => handleUndoSingleDart()} 
-                        className="py-3.5 bg-zinc-950 hover:bg-[#141419] border border-zinc-800 rounded-xl flex items-center justify-center gap-1.5 active:translate-y-0.5 transition-all cursor-pointer text-zinc-400 text-xs font-bold"
-                        title="直近の投げを1回分取り消す"
-                      >
-                        <Icons.Undo2 />
-                        <span>1本消去</span>
-                      </button>
-
-                      <button 
-                        onClick={() => handleFlushRound()} 
-                        className="py-3.5 bg-zinc-950 hover:bg-[#1c1414] border border-rose-900/50 rounded-xl flex items-center justify-center gap-1.5 active:translate-y-0.5 transition-all cursor-pointer text-rose-400 text-xs font-bold"
-                        title="このターンの全投擲をゼロに戻す"
-                      >
-                        <Icons.Trash2 />
-                        <span>リセット</span>
-                      </button>
-
-                      <button 
-                        onClick={handleUndoCommittedTurn} 
-                        disabled={turnHistoryState.length === 0}
-                        className="py-3.5 bg-zinc-950 hover:bg-[#1c1c14] border border-amber-900/50 rounded-xl flex items-center justify-center gap-1.5 active:translate-y-0.5 transition-all disabled:opacity-25 disabled:pointer-events-none cursor-pointer text-amber-500 text-xs font-bold"
-                        title="一つ前のプレイヤーのターンの状態に巻き戻す"
-                      >
-                        <Icons.RotateCcw />
-                        <span>プレイヤーを戻す</span>
-                      </button>
-                    </div>
-
-                    <button 
-                      onClick={handleCommitRound} 
-                      className={`w-full py-5 rounded-2xl font-fliqlo font-black text-base tracking-widest uppercase transition-all duration-150 border flex items-center justify-center gap-2 cursor-pointer ${
-                        confirmStage === 'next' 
-                          ? 'bg-emerald-600 border-emerald-500 text-white shadow-[0_10px_25px_rgba(16,185,129,0.3)]' 
-                          : 'bg-gradient-to-r from-amber-400 to-amber-500 border-amber-300 text-black font-extrabold shadow-[0_10px_25px_rgba(245,158,11,0.2)]'
-                      }`}
-                    >
-                      <span className="text-lg">🎯</span>
-                      <span>
-                        {confirmStage === 'next' ? '次プレイヤーへ交代 ➔' : 'スコア確定 (OK)'}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-              </div>
-
-            </main>
-
-            {/* HELPER MODAL */}
-            {showHowTo && (
-              <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm p-4 flex items-center justify-center">
-                <div className="bg-zinc-950 border border-zinc-900 max-w-sm w-full p-5 rounded-2xl space-y-4 no-scrollbar overflow-y-auto max-h-[85vh]">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-xs font-black tracking-widest text-amber-400 uppercase">🎯 スコアラーの使い方ヘルプ</h3>
-                    <button onClick={() => setShowHowTo(false)} className="text-zinc-500 hover:text-white cursor-pointer"><Icons.X /></button>
-                  </div>
-                  <div className="text-[11px] text-zinc-300 space-y-2.5 leading-relaxed">
-                    <p><b className="text-amber-200">1. スコアの入力方法:</b> 画面中央のデジタルダーツボードを直接タップするか、下部のテンキーボード（Single/Double/Tripleを選んでからターゲット指定）で簡単に入力可能です。</p>
-                    <p><b className="text-amber-200">2. 修正機能:</b> 3つのスロットをタップすれば特定の矢だけを後から上書き修正できます。「1本消去」や「リセット」も完備しています。</p>
-                    <p><b className="text-amber-200">3. ブル設定:</b> セパレートブル（アウター25点/インナー50点）とファットブル（アウター50点/インナー50点）の設定切り替えに対応しています。設定パネルから変更できます。</p>
-                  </div>
-                  <button onClick={() => setShowHowTo(false)} className="w-full py-2 bg-[#141419] border border-zinc-800 text-zinc-400 font-bold text-[10px] rounded-lg cursor-pointer">閉じる</button>
-                </div>
-              </div>
-            )}
-
-            {/* VICTORY MODAL */}
-            {winner && (
-              <div className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-center items-center p-4">
-                <div className="text-center space-y-4 max-w-xs">
-                  <span className="text-5xl block animate-bounce">👑</span>
-                  <h2 className="text-xl font-black tracking-wider text-amber-400 uppercase">{winner.name} WINS!</h2>
-                  <p className="text-[10px] text-zinc-500 uppercase">見事ゼロを達成しました！</p>
-                  <button onClick={() => { setWinner(null); setShowSettingsSetup(true); }} className="px-6 py-2.5 bg-amber-500 text-black font-black text-xs rounded-xl cursor-pointer shadow-lg hover:bg-amber-400">再戦・リセット</button>
-                </div>
-              </div>
-            )}
-          </div>
-        );
+        }
       }
 
-      const root = ReactDOM.createRoot(document.getElementById('root'));
-      root.render(<App />);
+      // 要素数が万が一3に満たない場合のために、末尾をハイフンオブジェクトで補完して確実に3要素の配列にする
+      while (calculatedSteps.length < 3) {
+        calculatedSteps.push({ target: "-", hit: null, status: "pending" });
+      }
+
+      return calculatedSteps;
+    };
+
+    const interactiveSteps = useMemo(() => {
+      try {
+        return getInteractiveArrangementSteps();
+      } catch (err) {
+        console.error("Assist calc failed, fall back to default", err);
+        return [
+          { target: "-", hit: null, status: "pending" },
+          { target: "-", hit: null, status: "pending" },
+          { target: "-", hit: null, status: "pending" }
+        ];
+      }
+    }, [activePlayer.remainingScore, currentThrows, bullType]);
+
+    return React.createElement(
+      "div",
+      { className: "min-h-[100dvh] w-full bg-[#050508] text-amber-100 flex flex-col justify-between select-none antialiased overflow-y-auto font-sans relative pb-8" },
+      React.createElement("div", { className: "fixed inset-0 bg-gradient-to-b from-zinc-950 via-[#0a0a0f] to-[#040406] z-0 pointer-events-none" }),
+      
+      React.createElement(
+        "header",
+        { className: "relative z-30 border-b border-zinc-900/80 bg-[#09090c]/88 backdrop-blur-md px-3.5 py-3 flex items-center justify-between shrink-0 shadow-[0_10px_30px_rgba(0,0,0,0.35)]" },
+        React.createElement(
+          "div",
+          { className: "flex items-center space-x-2" },
+          React.createElement("div", { className: "w-[26px] h-[26px] rounded-full border border-amber-500/30 bg-neutral-950 flex items-center justify-center shadow-lg shadow-amber-500/5" }, React.createElement("span", { className: "text-amber-400 font-black text-[11px] tracking-tighter" }, "BAR")),
+          React.createElement("div", null, React.createElement("h1", { className: "text-[11px] font-black tracking-widest text-amber-400 leading-none uppercase" }, "PUB DARTS CABIN"), React.createElement("p", { className: "text-[8px] text-zinc-500 font-mono mt-0.5 tracking-wider uppercase" }, "Fliqlo Interactive Assist"))
+        ),
+        React.createElement(
+          "div",
+          { className: "flex items-center space-x-2" },
+          React.createElement("button", { onClick: () => setSoundEnabled(!soundEnabled), className: "p-1.5 rounded-lg bg-[#141419] border border-zinc-800 text-zinc-400 hover:text-amber-400 hover:border-amber-500/30 transition cursor-pointer" }, soundEnabled ? React.createElement("span", { className: "text-emerald-500" }, React.createElement(Icons.Volume2, null)) : React.createElement("span", { className: "text-zinc-500" }, React.createElement(Icons.VolumeX, null))),
+          React.createElement("button", { onClick: () => setShowHowTo(true), className: "p-1.5 rounded-lg bg-[#141419] border border-zinc-800 text-amber-500/90 flex items-center gap-1 text-[9px] font-bold cursor-pointer hover:border-amber-500/30" }, React.createElement(Icons.HelpCircle, null), React.createElement("span", null, "ヘルプ")),
+          React.createElement("button", { onClick: handleBackToMenuRequest, className: `px-2.5 py-1 rounded-lg border text-[9px] font-bold transition flex items-center gap-1 cursor-pointer bg-[#141419] border-zinc-800 text-zinc-400 hover:text-amber-400 hover:border-amber-500/30` }, React.createElement(Icons.Settings, null), React.createElement("span", null, "メニューに戻る"))
+        )
+      ),
+
+      React.createElement(
+        "main",
+        { className: "flex-grow flex flex-col lg:flex-row justify-center items-stretch relative z-10 p-2 md:p-4 gap-4 max-w-5xl mx-auto w-full" },
+        
+        React.createElement(
+          "div",
+          { className: "flex-grow flex flex-col justify-center items-center min-h-0 w-full lg:max-w-3xl relative" },
+          
+          // New 3-Step Interactive Darts Assist Panel
+          React.createElement(
+            "div",
+            { className: "w-full text-center py-1 shrink-0 z-20" },
+            React.createElement("div", { className: "text-[8px] font-mono font-black text-zinc-500 tracking-widest mb-1.5 uppercase" }, "🎯 INTERACTIVE TURN ASSIST (TARGETS)"),
+            React.createElement(
+              "div",
+              { className: "grid grid-cols-3 gap-2 max-w-sm mx-auto p-1 bg-zinc-950/80 rounded-xl border border-zinc-900 shadow-xl" },
+              interactiveSteps.map((step, idx) => {
+                let cardClass = "border-zinc-800 bg-zinc-900/40 text-zinc-600";
+                let badge = null;
+                
+                if (step.status === "completed") {
+                  cardClass = step.isCorrect 
+                    ? "border-emerald-500/50 bg-emerald-950/20 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.1)]"
+                    : "border-orange-500/30 bg-orange-950/20 text-orange-400";
+                  badge = React.createElement("span", { className: "text-[7px] font-black uppercase mt-0.5 " + (step.isCorrect ? "text-emerald-400" : "text-orange-400") }, step.isCorrect ? "🟢 HIT!" : `🟠 OUT (${step.hit})`);
+                } else if (step.status === "active") {
+                  cardClass = "border-amber-500/60 bg-amber-500/10 text-amber-300 assist-pulse";
+                  badge = React.createElement("span", { className: "text-[7px] font-black uppercase text-amber-400 animate-pulse mt-0.5" }, step.isRecovery ? "⚡ RECOVERY" : "🔥 SHOOT HERE");
+                } else {
+                  cardClass = "border-zinc-900 bg-zinc-950/20 text-zinc-700 opacity-40";
+                  badge = React.createElement("span", { className: "text-[7px] font-black text-zinc-700 uppercase mt-0.5" }, "PENDING");
+                }
+
+                return React.createElement(
+                  "div",
+                  { key: idx, className: `flex flex-col items-center justify-center p-2 rounded-lg border transition-all duration-300 ${cardClass}` },
+                  React.createElement("span", { className: "text-[8px] text-zinc-500 font-bold uppercase" }, "DART ", idx + 1),
+                  React.createElement("span", { className: "text-sm sm:text-base font-black font-fliqlo tracking-tight" }, step.target || "-"),
+                  badge
+                );
+              })
+            )
+          ),
+          
+          React.createElement(
+            "div",
+            { className: "w-full flex flex-row items-center justify-center relative my-auto py-3 select-none gap-1 sm:gap-4" },
+            React.createElement(
+              "div",
+              { className: "w-[28%] flex flex-col justify-center shrink-0" },
+              React.createElement(PlayerCockpit, {
+                player: players[0],
+                displayScore: p1DisplayScore,
+                isActive: activePlayerIndex === 0,
+                isBust: isRoundBurst && activePlayerIndex === 0,
+                alignment: "left",
+                label: "P1 HISTORY"
+              })
+            ),
+            
+            React.createElement(
+              "div",
+              { className: "relative w-[42%] aspect-square flex items-center justify-center pointer-events-auto shrink-0 z-20" },
+              React.createElement("div", { className: "absolute inset-0 rounded-full bg-black/60 blur-md pointer-events-none transform translate-y-2 scale-[0.98]" }),
+              React.createElement(
+                "svg",
+                { 
+                  ref: boardRef, 
+                  onClick: handleBoardClick, 
+                  onTouchStart: (e) => { e.preventDefault(); handleBoardClick(e); }, 
+                  viewBox: "-210 -210 420 420", 
+                  className: "w-full h-full drop-shadow-[0_15px_30px_rgba(0,0,0,0.95)] overflow-visible cursor-crosshair", 
+                  style: { touchAction: "none" } 
+                },
+                React.createElement("defs", null, 
+                  React.createElement("filter", { id: "marker-glow", x: "-50%", y: "-50%", width: "200%", height: "200%" },
+                    React.createElement("feGaussianBlur", { stdDeviation: "3", result: "blur" }),
+                    React.createElement("feMerge", null,
+                      React.createElement("feMergeNode", { in: "blur" }),
+                      React.createElement("feMergeNode", { in: "SourceGraphic" })
+                    )
+                  )
+                ),
+                React.createElement("circle", { r: "195", fill: "#0c0c10", stroke: "#1c1c24", strokeWidth: "3" }),
+                React.createElement("circle", { r: "176", fill: "none", stroke: "#2c2c36", strokeWidth: "0.8" }),
+                React.createElement("circle", { r: "154", fill: "none", stroke: "#2c2c36", strokeWidth: "0.8" }),
+                React.createElement("circle", { r: "112", fill: "none", stroke: "#2c2c36", strokeWidth: "0.8" }),
+                React.createElement("circle", { r: "90", fill: "none", stroke: "#2c2c36", strokeWidth: "0.8" }),
+                WEDGES.map((w, i) => {
+                  const angle = i * 18 - 90;
+                  const radStart = (angle - 9) * Math.PI / 180;
+                  const radEnd = (angle + 9) * Math.PI / 180;
+                  const isEven = i % 2 === 0;
+                  const buildPath = (r1, r2) => {
+                    const x1 = r1 * Math.cos(radStart), y1 = r1 * Math.sin(radStart);
+                    const x2 = r2 * Math.cos(radStart), y2 = r2 * Math.sin(radStart);
+                    const x3 = r2 * Math.cos(radEnd), y3 = r2 * Math.sin(radEnd);
+                    const x4 = r1 * Math.cos(radEnd), y4 = r1 * Math.sin(radEnd);
+                    return `M ${x1} ${y1} L ${x2} ${y2} A ${r2} ${r2} 0 0 1 ${x3} ${y3} L ${x4} ${y4} A ${r1} ${r1} 0 0 0 ${x1} ${y1} Z`;
+                  };
+                  const textAngle = angle * Math.PI / 180;
+                  const tx = 185 * Math.cos(textAngle);
+                  const ty = 185 * Math.sin(textAngle);
+                  return React.createElement("g", { key: w }, 
+                    React.createElement("path", { d: buildPath(112, 154), fill: isEven ? "#09090c" : "#eaeaea", stroke: "#222", strokeWidth: "0.5" }), 
+                    React.createElement("path", { d: buildPath(22, 90), fill: isEven ? "#09090c" : "#eaeaea", stroke: "#222", strokeWidth: "0.5" }), 
+                    React.createElement("path", { d: buildPath(154, 176), fill: isEven ? "#e11d48" : "#16a34a", stroke: "#222", strokeWidth: "0.5" }), 
+                    React.createElement("path", { d: buildPath(90, 112), fill: isEven ? "#e11d48" : "#16a34a", stroke: "#222", strokeWidth: "0.5" }), 
+                    React.createElement("text", { x: tx, y: ty, textAnchor: "middle", dominantBaseline: "central", fill: "#f59e0b", fontSize: "13", fontWeight: "900", transform: `rotate(${angle + 90}, ${tx}, ${ty})` }, w)
+                  );
+                }),
+                React.createElement("circle", { r: "22", fill: "#16a34a", stroke: "#222", strokeWidth: "0.5" }),
+                React.createElement("circle", { r: "8.5", fill: "#e11d48", stroke: "#222", strokeWidth: "0.5" }),
+                currentThrows.map((t, idx) => React.createElement("circle", { 
+                  key: idx, 
+                  cx: t.x, 
+                  cy: t.y, 
+                  r: "6.5", 
+                  fill: idx === editingThrowIndex ? "#38bdf8" : "#f59e0b", 
+                  stroke: "white", 
+                  strokeWidth: "2.5", 
+                  filter: "url(#marker-glow)",
+                  className: "transition-all duration-150" 
+                }))
+              )
+            ),
+            React.createElement(
+              "div",
+              { className: "w-[28%] flex flex-col justify-center shrink-0" },
+              React.createElement(PlayerCockpit, {
+                player: players[1],
+                displayScore: p2DisplayScore,
+                isActive: activePlayerIndex === 1,
+                isBust: isRoundBurst && activePlayerIndex === 1,
+                alignment: "right",
+                label: "P2 HISTORY"
+              })
+            )
+          ),
+          
+          React.createElement(
+            "div",
+            { className: "w-full max-w-sm mt-3 soft-metal score-slot p-2 rounded-xl border border-zinc-800/90 flex justify-between items-center relative z-20 shadow-[0_10px_25px_rgba(0,0,0,0.28)]" },
+            React.createElement(
+              "div",
+              { className: "flex gap-1.5" },
+              [0, 1, 2].map((idx) => {
+                const t = currentThrows[idx];
+                const isFocused = editingThrowIndex === idx;
+                return React.createElement(
+                  "div",
+                  { 
+                    key: idx, 
+                    onClick: () => {
+                      if (isFocused) {
+                        setEditingThrowIndex(null);
+                        playSound("click");
+                      } else if (t) {
+                        setEditingThrowIndex(idx);
+                        playSound("click");
+                      }
+                    }, 
+                    className: `w-14 h-10 rounded-lg flex flex-col justify-center items-center font-mono cursor-pointer transition-all ${isFocused ? "bg-sky-500/20 border border-sky-400 text-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.25)]" : t ? "bg-[#18181f] border border-amber-500/30 text-white" : "bg-black/40 border border-zinc-800 text-zinc-700"}` 
+                  },
+                  React.createElement("span", { className: "text-[7px] block text-zinc-500 uppercase leading-none mb-0.5" }, "Dart ", idx + 1),
+                  React.createElement("span", { className: "text-sm font-black" }, t ? t.label : "-")
+                );
+              })
+            ),
+            React.createElement(
+              "div",
+              { className: "text-right pr-1" },
+              React.createElement("span", { className: "text-[7.5px] text-zinc-500 block uppercase font-bold tracking-wider leading-none mb-0.5" }, "Round Sum"),
+              React.createElement("span", { className: `text-lg font-black font-mono leading-none ${isRoundBurst ? "line-through text-rose-500" : "text-amber-400"}` }, isRoundBurst ? "BURST" : currentRoundSubtotal)
+            )
+          )
+        ),
+        
+        React.createElement(
+          "div",
+          { className: "w-full lg:w-[410px] shrink-0 flex flex-col justify-center relative z-20" },
+          React.createElement(
+            "div",
+            { className: "w-full mt-2 soft-metal panel-glow p-3 rounded-2xl border border-zinc-800/90 backdrop-blur-md" },
+            React.createElement(
+              "div",
+              { className: "grid grid-cols-12 gap-2.5" },
+              React.createElement(
+                "div",
+                { className: "col-span-9 flex flex-col gap-3" },
+                React.createElement(
+                  "div",
+                  { className: "grid grid-cols-3 gap-1.5 p-1 bg-black/40 rounded-xl border border-zinc-800" },
+                  React.createElement("button", { onClick: () => {
+                    playSound("click");
+                    setPadMultiplier(1);
+                  }, className: `py-3 rounded-lg text-xs font-black uppercase cursor-pointer transition-all border ${padMultiplier === 1 ? "bg-amber-500 border-amber-400 text-black shadow-[0_3px_8px_rgba(245,158,11,0.2)] font-extrabold translate-y-[-1px]" : "bg-transparent text-zinc-500 border-transparent active:translate-y-0.5"}` }, "Single"),
+                  React.createElement("button", { onClick: () => {
+                    playSound("click");
+                    setPadMultiplier(2);
+                  }, className: `py-3 rounded-lg text-xs font-black uppercase cursor-pointer transition-all border ${padMultiplier === 2 ? "bg-rose-600 border-rose-500 text-white shadow-[0_3px_8px_rgba(225,29,72,0.25)] font-extrabold translate-y-[-1px]" : "bg-transparent text-zinc-500 border-transparent active:translate-y-0.5"}` }, "Double"),
+                  React.createElement("button", { onClick: () => {
+                    playSound("click");
+                    setPadMultiplier(3);
+                  }, className: `py-3 rounded-lg text-xs font-black uppercase cursor-pointer transition-all border ${padMultiplier === 3 ? "bg-emerald-600 border-emerald-500 text-white shadow-[0_3px_8px_rgba(16,185,129,0.25)] font-extrabold translate-y-[-1px]" : "bg-transparent text-zinc-500 border-transparent active:translate-y-0.5"}` }, "Triple")
+                ),
+                React.createElement(
+                  "div",
+                  { className: "flex flex-col gap-2" },
+                  React.createElement(
+                    "div",
+                    { className: "grid grid-cols-6 gap-1.5 bg-amber-500/5 p-1.5 rounded-xl border border-amber-500/10" },
+                    [20, 19, 18, 17, 16, 15].map((num) => React.createElement(
+                      "button",
+                      {
+                        key: num,
+                        onClick: () => handleKeypadTap(num),
+                        className: "w-11 h-11 md:w-[52px] md:h-[52px] rounded-xl flex items-center justify-center font-black font-mono text-sm md:text-base bg-zinc-950 border border-amber-500/25 text-amber-300 hover:border-amber-400 active:translate-y-0.5 transition-all shadow-[0_4px_10px_rgba(0,0,0,0.5)] cursor-pointer"
+                      },
+                      num
+                    ))
+                  ),
+                  React.createElement(
+                    "div",
+                    { className: "grid grid-cols-5 gap-1.5 justify-items-center" },
+                    [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map((num) => React.createElement(
+                      "button",
+                      {
+                        key: num,
+                        onClick: () => handleKeypadTap(num),
+                        className: `w-11 h-11 md:w-[52px] md:h-[52px] rounded-xl flex items-center justify-center font-black font-mono text-sm md:text-base active:translate-y-0.5 transition-all cursor-pointer shadow-[0_4px_10px_rgba(0,0,0,0.5)] border ${num === 0 ? "bg-[#18181f] border-rose-900/60 text-rose-400 hover:bg-[#23232b]" : "bg-zinc-950 border-zinc-800 text-zinc-200 hover:border-zinc-500"}`
+                      },
+                      num
+                    ))
+                  )
+                )
+              ),
+              React.createElement(
+                "div",
+                { className: "col-span-3 flex flex-col justify-between gap-2 self-stretch" },
+                React.createElement(
+                  "button",
+                  {
+                    onClick: () => handleKeypadTap(25, 1, "outer"),
+                    className: "flex-1 rounded-xl font-mono font-black uppercase border-2 flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 border-[#16a34a] text-[#16a34a] hover:bg-emerald-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)]",
+                    title: bullType === "fat" ? "アウターブル(50点)" : "アウターブル(25点)"
+                  },
+                  React.createElement("span", { className: "text-4xl leading-none font-black text-[#16a34a]" }, "○"),
+                  React.createElement("span", { className: "leading-tight text-xs font-black tracking-tight" }, "OUT", React.createElement("br", null), "BULL"),
+                  React.createElement("span", { className: "text-base font-black text-zinc-200" }, bullType === "fat" ? "50" : "25")
+                ),
+                React.createElement(
+                  "button",
+                  {
+                    onClick: () => handleKeypadTap(25, 2, "inner"),
+                    className: "flex-1 rounded-xl font-mono font-black uppercase border flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 border-rose-900/70 text-rose-400 hover:bg-rose-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)]",
+                    title: "インナーブル(50点)"
+                  },
+                  React.createElement("span", { className: "text-3xl" }, "🔴"),
+                  React.createElement("span", { className: "leading-tight text-xs font-black tracking-tight" }, "IN", React.createElement("br", null), "BULL"),
+                  React.createElement("span", { className: "text-base font-black text-zinc-200" }, "50")
+                )
+              )
+            ),
+            React.createElement(
+              "div",
+              { className: "mt-4 pt-3 border-t border-zinc-800 space-y-2.5" },
+              isRoundBurst && React.createElement(
+                "div",
+                { className: "w-full py-3 rounded-xl bg-rose-950/60 border-2 border-rose-500/70 text-center" },
+                React.createElement("span", { className: "text-rose-400 font-black text-base tracking-widest" }, "💥 BURST — 得点なし"),
+                React.createElement("p", { className: "text-rose-500/70 text-[10px] mt-0.5" }, "「リセット」で入力し直すか、そのまま確定できます")
+              ),
+              React.createElement(
+                "div",
+                { className: "grid grid-cols-3 gap-2" },
+                React.createElement("button", { onClick: () => handleUndoSingleDart(), className: "py-3.5 bg-zinc-950 hover:bg-[#141419] border border-zinc-800 rounded-xl flex items-center justify-center gap-1.5 active:translate-y-0.5 transition-all cursor-pointer text-zinc-400 text-xs font-bold", title: "直近の投げを1回分取り消す" }, React.createElement(Icons.Undo2, null), React.createElement("span", null, "1本消去")),
+                React.createElement("button", { onClick: () => handleFlushRound(), className: "py-3.5 bg-zinc-950 hover:bg-[#1c1414] border border-rose-900/50 rounded-xl flex items-center justify-center gap-1.5 active:translate-y-0.5 transition-all cursor-pointer text-rose-400 text-xs font-bold", title: "このターンの全投擲をゼロに戻す" }, React.createElement(Icons.Trash2, null), React.createElement("span", null, "リセット")),
+                React.createElement("button", { onClick: handleUndoCommittedTurn, disabled: turnHistoryState.length === 0, className: "py-3.5 bg-zinc-950 hover:bg-[#1c1c14] border border-amber-900/50 rounded-xl flex items-center justify-center gap-1.5 active:translate-y-0.5 transition-all disabled:opacity-25 disabled:pointer-events-none cursor-pointer text-amber-500 text-xs font-bold", title: "一つ前のプレイヤーのターンの状態に巻き戻す" }, React.createElement(Icons.RotateCcw, null), React.createElement("span", null, "プレイヤーを戻す"))
+              ),
+              React.createElement(
+                "button",
+                {
+                  onClick: handleCommitRound,
+                  className: `w-full py-5 rounded-2xl font-fliqlo font-black text-base tracking-widest uppercase transition-all duration-150 border flex items-center justify-center gap-2 cursor-pointer ${
+                    confirmStage === "next" ? "bg-emerald-600 border-emerald-500 text-white shadow-[0_10px_25px_rgba(16,185,129,0.3)]" : "bg-gradient-to-r from-amber-400 to-amber-500 border-amber-300 text-black font-extrabold shadow-[0_10px_25px_rgba(245,158,11,0.2)]"
+                  }`
+                },
+                React.createElement("span", { className: "text-lg" }, "🎯"),
+                React.createElement("span", null, confirmStage === "next" ? "次プレイヤーへ交代 ➔" : "スコア確定 (OK)")
+              )
+            )
+          )
+        )
+      ),
+
+      showSettingsSetup && React.createElement(
+        "div",
+        { className: "fixed inset-0 z-50 bg-black/90 backdrop-blur-lg flex items-end sm:items-center justify-center p-4 transition-all" },
+        React.createElement(
+          "div",
+          { className: "w-full max-w-sm soft-metal panel-glow border border-zinc-800/90 rounded-3xl sm:rounded-2xl overflow-hidden shadow-2xl" },
+          React.createElement(
+            "div",
+            { className: "flex items-center justify-between px-4 pt-4 pb-3 border-b border-zinc-800/60" },
+            React.createElement("div", null, React.createElement("h2", { className: "text-sm font-black tracking-widest text-amber-400 uppercase leading-none" }, "🎯 GAME SETUP"), React.createElement("p", { className: "text-[9px] text-zinc-500 font-mono mt-0.5" }, "ゲーム設定")),
+            players[0].history.length > 0 && React.createElement("button", { onClick: () => { playSound("revert"); setShowSettingsSetup(false); }, className: "p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-500 cursor-pointer" }, React.createElement(Icons.X, null))
+          ),
+          React.createElement(
+            "div",
+            { className: "p-4 space-y-4" },
+            React.createElement(
+              "div",
+              { className: "grid grid-cols-2 gap-2" },
+              [0, 1].map((i) => React.createElement(
+                "div",
+                { key: i, className: "bg-zinc-900/40 border border-zinc-800 rounded-xl p-3 space-y-2" },
+                React.createElement("input", {
+                  type: "text",
+                  maxLength: 10,
+                  value: players[i].name,
+                  onChange: (e) => {
+                    const updated = [...players];
+                    updated[i] = { ...updated[i], name: e.target.value.toUpperCase() };
+                    setPlayers(updated);
+                  },
+                  className: "w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-2 text-xs text-amber-200 outline-none uppercase font-black text-center tracking-wider",
+                  placeholder: `P${i + 1} NAME`
+                }),
+                React.createElement(
+                  "div",
+                  { className: "flex items-center justify-between gap-1" },
+                  React.createElement(
+                    "div",
+                    { className: "flex flex-col gap-1" },
+                    React.createElement("button", { onClick: () => {
+                      playSound("click");
+                      if (i === 0) setP1StartScore((p) => Math.max(11, p - 10));
+                      else setP2StartScore((p) => Math.max(11, p - 10));
+                    }, className: "w-8 h-6 rounded bg-zinc-950 border border-zinc-700 text-zinc-500 text-[10px] font-black cursor-pointer flex items-center justify-center" }, "-10"),
+                    React.createElement("button", { onClick: () => {
+                      playSound("click");
+                      if (i === 0) setP1StartScore((p) => Math.max(11, p - 1));
+                      else setP2StartScore((p) => Math.max(11, p - 1));
+                    }, className: "w-8 h-6 rounded bg-zinc-950 border border-zinc-700 text-zinc-400 text-[10px] font-black cursor-pointer flex items-center justify-center" }, "-1")
+                  ),
+                  React.createElement("span", { className: "text-lg font-black font-mono text-white" }, i === 0 ? p1StartScore : p2StartScore),
+                  React.createElement(
+                    "div",
+                    { className: "flex flex-col gap-1" },
+                    React.createElement("button", { onClick: () => {
+                      playSound("click");
+                      if (i === 0) setP1StartScore((p) => Math.min(999, p + 10));
+                      else setP2StartScore((p) => Math.min(999, p + 10));
+                    }, className: "w-8 h-6 rounded bg-zinc-950 border border-zinc-700 text-zinc-500 text-[10px] font-black cursor-pointer flex items-center justify-center" }, "+10"),
+                    React.createElement("button", { onClick: () => {
+                      playSound("click");
+                      if (i === 0) setP1StartScore((p) => Math.min(999, p + 1));
+                      else setP2StartScore((p) => Math.min(999, p + 1));
+                    }, className: "w-8 h-6 rounded bg-zinc-950 border border-zinc-700 text-zinc-400 text-[10px] font-black cursor-pointer flex items-center justify-center" }, "+1")
+                  )
+                )
+              ))
+            ),
+            React.createElement(
+              "div",
+              { className: "grid grid-cols-3 gap-2" },
+              [301, 501, 701].map((score) => React.createElement(
+                "button",
+                {
+                  key: score,
+                  onClick: () => {
+                    playSound("click");
+                    setP1StartScore(score);
+                    setP2StartScore(score);
+                  },
+                  className: `py-2.5 rounded-xl text-sm font-black border transition cursor-pointer ${p1StartScore === score && p2StartScore === score ? "bg-amber-500 border-amber-400 text-black shadow-lg" : "bg-zinc-900/60 border-zinc-700 text-zinc-400 hover:text-amber-400"}`
+                },
+                score
+              ))
+            ),
+            React.createElement(
+              "div",
+              { className: "space-y-2" },
+              React.createElement("div", { className: "flex items-center gap-2" }, React.createElement("span", { className: "text-[10px] text-zinc-500 font-bold w-16 shrink-0" }, "BULL"), React.createElement("div", { className: "flex-1 grid grid-cols-2 gap-1.5" }, [["separate", "セパ (外25)"], ["fat", "ファット (外50)"]].map(([val, label]) => React.createElement(
+                "button",
+                {
+                  key: val,
+                  onClick: () => {
+                    playSound("click");
+                    setBullType(val);
+                  },
+                  className: `py-2 rounded-lg text-[10px] font-black transition cursor-pointer border ${bullType === val ? "bg-amber-500 border-amber-400 text-black shadow-md" : "bg-zinc-900/60 border-zinc-700 text-zinc-400"}`
+                },
+                label
+              )))),
+              React.createElement("div", { className: "flex items-center gap-2" }, React.createElement("span", { className: "text-[10px] text-zinc-500 font-bold w-16 shrink-0" }, "OUT"), React.createElement("div", { className: "flex-1 grid grid-cols-3 gap-1.5" }, ["single", "double", "master"].map((m) => React.createElement(
+                "button",
+                {
+                  key: m,
+                  onClick: () => {
+                    playSound("click");
+                    setOutMode(m);
+                  },
+                  className: `py-2 rounded-lg text-[10px] font-black uppercase transition cursor-pointer border ${outMode === m ? "bg-amber-950 border-amber-500 text-amber-300 shadow-md" : "bg-zinc-900/60 border-zinc-700 text-zinc-500"}`
+                },
+                m
+              ))))
+            ),
+            showQuitConfirm ? React.createElement("div", { className: "space-y-2" }, React.createElement("p", { className: "text-center text-xs font-bold text-rose-400 bg-rose-950/40 border border-rose-900/50 rounded-xl py-3 px-2" }, "⚠️ 現在のゲームを終了して", React.createElement("br", null), "新しいゲームを始めますか？"), React.createElement(
+              "div",
+              { className: "grid grid-cols-2 gap-2" },
+              React.createElement("button", { onClick: () => { playSound("revert"); setShowQuitConfirm(false); }, className: "py-3 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-400 font-black text-xs cursor-pointer" }, "キャンセル"),
+              React.createElement("button", { onClick: () => {
+                setShowQuitConfirm(false);
+                handleStartGame();
+              }, className: "py-3 rounded-xl bg-rose-600 border border-rose-500 text-white font-black text-xs cursor-pointer" }, "新しいゲーム開始")
+            )) : React.createElement(
+              "button",
+              {
+                onClick: () => {
+                  if (players[0].history.length > 0 || players[1].history.length > 0) {
+                    setShowQuitConfirm(true);
+                  } else {
+                    handleStartGame();
+                  }
+                },
+                className: "w-full py-4 bg-gradient-to-r from-amber-400 to-amber-500 border border-amber-300 text-black font-black text-sm rounded-xl transition uppercase cursor-pointer shadow-lg shadow-amber-500/10 tracking-widest"
+              },
+              "対戦開始 START 🎯"
+            )
+          )
+        )
+      ),
+
+      showExitConfirm && React.createElement(
+        "div",
+        { className: "fixed inset-0 z-50 bg-black/95 backdrop-blur-lg flex items-center justify-center p-4" },
+        React.createElement(
+          "div",
+          { className: "soft-metal panel-glow border border-zinc-800 max-w-sm w-full p-6 rounded-2xl space-y-4" },
+          React.createElement(
+            "div",
+            { className: "text-center space-y-2" },
+            React.createElement("span", { className: "text-4xl block animate-pulse" }, "🚨"),
+            React.createElement("h3", { className: "text-sm font-black tracking-widest text-rose-500 uppercase" }, "ゲーム中断の確認"),
+            React.createElement("p", { className: "text-xs text-zinc-300 leading-relaxed" }, "現在進行中の対戦ゲームを途中で終了し、", React.createElement("br", null), "ゲーム設定メニューに戻りますか？", React.createElement("br", null), React.createElement("span", { className: "text-rose-400 font-bold" }, "（進行スコア履歴はすべて破棄されます）"))
+          ),
+          React.createElement(
+            "div",
+            { className: "grid grid-cols-2 gap-3" },
+            React.createElement("button", { 
+              onClick: () => { playSound("revert"); setShowExitConfirm(false); }, 
+              className: "py-3 bg-zinc-900 border border-zinc-700 text-zinc-400 text-xs font-bold rounded-xl cursor-pointer" 
+            }, "キャンセル"),
+            React.createElement("button", { 
+              onClick: () => { 
+                playSound("revert"); 
+                setShowExitConfirm(false); 
+                setShowSettingsSetup(true); 
+              }, 
+              className: "py-3 bg-rose-600 hover:bg-rose-500 text-white text-xs font-black rounded-xl cursor-pointer" 
+            }, "戻る")
+          )
+        )
+      ),
+
+      showHowTo && React.createElement(
+        "div",
+        { className: "fixed inset-0 z-50 bg-black/90 backdrop-blur-md p-4 flex items-center justify-center" },
+        React.createElement(
+          "div",
+          { className: "soft-metal panel-glow border border-zinc-900 max-w-sm w-full p-5 rounded-2xl space-y-4 no-scrollbar overflow-y-auto max-h-[85vh]" },
+          React.createElement(
+            "div",
+            { className: "flex justify-between items-center" },
+            React.createElement("h3", { className: "text-xs font-black tracking-widest text-amber-400 uppercase" }, "🎯 スコアラーの使い方ヘルプ"),
+            React.createElement("button", { onClick: () => { playSound("revert"); setShowHowTo(false); }, className: "text-zinc-500 hover:text-white cursor-pointer" }, React.createElement(Icons.X, null))
+          ),
+          React.createElement(
+            "div",
+            { className: "text-[11px] text-zinc-300 space-y-2.5 leading-relaxed" },
+            React.createElement("p", null, React.createElement("b", { className: "text-amber-200" }, "1. スコアの入力方法:"), " 画面中央 of デジタルダーツボードを直接タップするか、下部のテンキーボード（Single/Double/Tripleを選んでからターゲット指定）で簡単に入力可能です。"),
+            React.createElement("p", null, React.createElement("b", { className: "text-amber-200" }, "2. 修正機能:"), " 3つのスロットをタップすれば特定の矢だけを後から上書き修正できます。再度スロットをタップすると選択状態を安全に解除できます。「1本消去」や「リセット」も完備しています。"),
+            React.createElement("p", null, React.createElement("b", { className: "text-amber-200" }, "3. リアルタイム・アレンジ・アシスト:"), " 1本投げるごとに自動計算され、もしミスして予定外のエリアに入った場合でも、残りの矢の数に応じた最適なリカバリルートが自動更新されて画面上に分かりやすく表示されます。")
+          ),
+          React.createElement("button", { onClick: () => { playSound("revert"); setShowHowTo(false); }, className: "w-full py-2 bg-[#141419] border border-zinc-800 text-zinc-400 font-bold text-[10px] rounded-lg cursor-pointer" }, "閉じる")
+        )
+      ),
+
+      winner && React.createElement(
+        "div",
+        { className: "fixed inset-0 z-50 bg-black/95 flex flex-col justify-center items-center p-4 animate-fade-in" },
+        React.createElement(
+          "div",
+          { className: "text-center space-y-4 max-w-xs" },
+          React.createElement("span", { className: "text-5xl block animate-bounce" }, "👑"),
+          React.createElement("h2", { className: "text-xl font-black tracking-wider text-amber-400 uppercase" }, winner.name, " WINS!"),
+          React.createElement("p", { className: "text-[10px] text-zinc-500 uppercase font-bold" }, "見事ゼロを達成しました！"),
+          React.createElement("button", { onClick: () => {
+            playSound("revert");
+            setWinner(null);
+            setShowSettingsSetup(true);
+          }, className: "px-6 py-2.5 bg-amber-500 text-black font-black text-xs rounded-xl cursor-pointer shadow-[0_12px_30px_rgba(245,158,11,0.22)] hover:bg-amber-400" }, "再戦・リセット")
+        )
+      )
+    );
+  }
+
+  const root = ReactDOM.createRoot(document.getElementById("root"));
+  root.render(React.createElement(App, null));
+})();
     </script>
   </body>
 </html>
