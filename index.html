@@ -220,6 +220,65 @@
       .assist-pulse {
         animation: pulseBorder 1.8s infinite ease-in-out;
       }
+
+      /* ── ダーツ盤の四隅に配置された丸型コーナーボタン ── */
+      .corner-btn {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        border: 1px solid;
+        border-radius: 9999px; /* 文字をなくし、完全な丸型ボタンに変更して洗練さを向上 */
+        transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        -webkit-tap-highlight-color: transparent;
+        z-index: 30;
+        width: 15%; /* 盤面に対して美しく調和するサイズに変更 */
+        aspect-ratio: 1;
+        padding: 0;
+        background: rgba(12,12,18,0.92);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.65);
+      }
+      .corner-btn:active { transform: scale(0.9); }
+      .corner-btn:disabled { opacity: 0.22; pointer-events: none; }
+
+      /* 位置マッピング (より自然な余白比率へ) */
+      .cb-tl { top: 4%; left: 4%; }
+      .cb-tr { top: 4%; right: 4%; }
+      .cb-bl { bottom: 4%; left: 4%; }
+      .cb-br { bottom: 4%; right: 4%; }
+
+      /* カラーバリエーション & ネオングロウ効果の最適化 */
+      .cb-undo  { border-color: rgba(113,113,122,0.45); color: #a1a1aa; }
+      .cb-undo:hover:not(:disabled)  { border-color: #71717a; color: #f4f4f5; background: rgba(30,30,38,0.92); }
+
+      .cb-reset { border-color: rgba(159,18,57,0.4); color: #fb7185; }
+      .cb-reset:hover:not(:disabled) { border-color: #f43f5e; color: #ffe4e6; background: rgba(38,12,20,0.92); }
+
+      .cb-prev  { border-color: rgba(120,53,15,0.45); color: #f59e0b; }
+      .cb-prev:hover:not(:disabled)  { border-color: #f59e0b; color: #fde047; background: rgba(38,22,8,0.92); }
+      .cb-prev.pulsing { animation: pulseBorder 1.8s infinite ease-in-out; }
+
+      .cb-ok    { border-color: rgba(245,158,11,0.55); color: #fbbf24; background: rgba(30,22,4,0.92); }
+      .cb-ok:hover:not(:disabled) { border-color: #fbbf24; color: #fef08a; background: rgba(45,32,4,0.92); }
+      .cb-ok.next-mode {
+        border-color: rgba(16,185,129,0.65); color: #34d399;
+        background: rgba(4,28,18,0.92);
+      }
+      .cb-ok.next-mode:hover { border-color: #34d399; color: #a7f3d0; background: rgba(6,38,24,0.92); }
+
+      .cb-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+      }
+      .cb-icon svg {
+        width: 48%; /* ボタンの直径に対して最もバランスの良いサイズにスケール調整 */
+        height: 48%;
+      }
     </style>
   </head>
   <body>
@@ -230,6 +289,7 @@
   const { useState, useEffect, useRef, useMemo } = React;
   const WEDGES = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
   const MAX_THROWS_PER_TURN = 3;
+  const LOCAL_STORAGE_KEY = "pub_darts_cabin_state_v3_minimal";
 
   // Master checkout table for standard dart finishes
   const ARRANGE_TABLE = {
@@ -475,15 +535,21 @@
       multiplier = 1;
       label = `S${scoreNum}`;
     }
-    return { score, multiplier, x, y, label };
+    return { score, multiplier, x, y, label, isBull: false };
   };
 
   // Resolve finish suggestions for Steel Darts scoring
-  const getSteelDartsArrangement = (score, bullType) => {
+  const getSteelDartsArrangement = (score, bullType, outMode) => {
     if (score > 350) return "No finish available yet";
+    
+    // 25点時の別アレンジ処理（セパブル且つダブルアウト、アウター不可に対応）
     if (score === 25) {
-      return "S9 - D8";
+      if (outMode === "single") {
+        return bullType === "separate" ? "S-Bull(25)" : "Bull(50)";
+      }
+      return bullType === "separate" ? "S17 - D4" : "No checkout (Fat Bull)";
     }
+    
     if (score >= 171) {
       if (score >= 301) {
         return "T20 - T20 - T20";
@@ -533,9 +599,9 @@
       if (remaining > 0 && remaining <= 20) {
         return `T20 - T20 - S${remaining}`;
       } else if (remaining === 25) {
-        return `T20 - T20 - S-Bull`;
+        return bullType === "separate" ? "T20 - T20 - S-Bull" : "T20 - T20 - Bull";
       } else if (remaining === 50) {
-        return `T20 - T20 - D-Bull`;
+        return "T20 - T20 - D-Bull";
       }
       return "T20 - T20 - T20";
     }
@@ -552,9 +618,9 @@
       return bogeyTable[score];
     }
     if (bullType === "separate") {
-      if (score === 50) return "D-Bull (50)";
+      if (score === 50) return "D-Bull";
     } else {
-      if (score === 50) return "Bull (50)";
+      if (score === 50) return "Bull";
     }
     return ARRANGE_TABLE[score] || "No checkout";
   };
@@ -578,17 +644,19 @@
     const [nextVal, setNextVal] = useState(value);
     const [isFlipping, setIsFlipping] = useState(false);
 
+    const timerRef = useRef(null);
     useEffect(() => {
-      if (value !== currentVal) {
-        setNextVal(value);
-        setIsFlipping(true);
-        const timer = setTimeout(() => {
-          setCurrentVal(value);
-          setIsFlipping(false);
-        }, 320);
-        return () => clearTimeout(timer);
-      }
-    }, [value, currentVal]);
+      if (value === currentVal) return;
+      if (timerRef.current) { clearTimeout(timerRef.current); setIsFlipping(false); }
+      setNextVal(value);
+      setIsFlipping(true);
+      timerRef.current = setTimeout(() => {
+        setCurrentVal(value);
+        setIsFlipping(false);
+        timerRef.current = null;
+      }, 320);
+      return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+    }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const displayCurrent = currentVal === "\xA0" ? "" : currentVal;
     const displayNext = nextVal === "\xA0" ? "" : nextVal;
@@ -739,14 +807,42 @@
     const [undoConfirmStage, setUndoConfirmStage] = useState("idle");
     const boardRef = useRef(null);
     const activePlayer = players[activePlayerIndex];
-    
+
     const roundState = useMemo(
       () => getRoundState(activePlayer.remainingScore, currentThrows, outMode),
       [activePlayer.remainingScore, currentThrows, outMode]
     );
     const isRoundBurst = roundState.isBust;
+
+    // [REAL-TIME VAR DEPENDENCY RESOLUTION]
+    const currentActiveRemaining = confirmStage === "next" ? activePlayer.remainingScore : roundState.remainingScore;
+    const currentRoundSubtotal = roundState.subtotal;
+
+    // LocalStorage 自動セーブ同期
+    useEffect(() => {
+      if (!showSettingsSetup && (players[0].history.length > 0 || players[1].history.length > 0 || currentThrows.length > 0)) {
+        try {
+          const saveData = {
+            players, activePlayerIndex, currentThrows, outMode, bullType,
+            turnHistoryState, confirmStage, editingThrowIndex, padMultiplier,
+            winner, savedAt: Date.now()
+          };
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(saveData));
+        } catch(e) {}
+      }
+    }, [players, activePlayerIndex, currentThrows, outMode, bullType, turnHistoryState, confirmStage, editingThrowIndex, padMultiplier, winner, showSettingsSetup]);
+
+    // ESCキーで編集モード解除
+    useEffect(() => {
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape' && editingThrowIndex !== null) {
+          setEditingThrowIndex(null);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [editingThrowIndex]);
     
-    // Cancel focus if user re-taps current slot
     const canAddMoreThrows = editingThrowIndex !== null || !roundState.isBust && !roundState.isFinished && currentThrows.length < MAX_THROWS_PER_TURN;
     
     useEffect(() => {
@@ -897,6 +993,7 @@
 
     const handleStartGame = () => {
       playSound("revert");
+      try { localStorage.removeItem(LOCAL_STORAGE_KEY); } catch(e) {}
       setPlayers([
         { id: "p1", name: players[0].name.trim() || "PLAYER 1", initialScore: p1StartScore, remainingScore: p1StartScore, history: [] },
         { id: "p2", name: players[1].name.trim() || "PLAYER 2", initialScore: p2StartScore, remainingScore: p2StartScore, history: [] }
@@ -986,8 +1083,8 @@
       const centerY = rect.top + rect.height / 2;
       const scale = rect.width / 420;
       
-      const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-      const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+      const clientX = e.clientX || (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : 0);
+      const clientY = e.clientY || (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY : 0);
       
       const normX = (clientX - centerX) / scale;
       const normY = (clientY - centerY) / scale;
@@ -1089,6 +1186,29 @@
       }
     };
 
+    // セーブデータ復帰
+    const handleRestoreSave = () => {
+      try {
+        const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (!raw) return false;
+        const d = JSON.parse(raw);
+        const age = Date.now() - (d.savedAt || 0);
+        if (age > 24 * 60 * 60 * 1000) { localStorage.removeItem(LOCAL_STORAGE_KEY); return false; }
+        setPlayers(d.players);
+        setActivePlayerIndex(d.activePlayerIndex);
+        setCurrentThrows(d.currentThrows || []);
+        setOutMode(d.outMode || 'single');
+        setBullType(d.bullType || 'separate');
+        setTurnHistoryState(d.turnHistoryState || []);
+        setConfirmStage(d.confirmStage || 'throwing');
+        setEditingThrowIndex(d.editingThrowIndex ?? null);
+        setPadMultiplier(d.padMultiplier || 1);
+        setWinner(d.winner || null);
+        setShowSettingsSetup(false);
+        return true;
+      } catch(e) { return false; }
+    };
+
     const handleBackToMenuRequest = () => {
       const isGameStarted = players[0].history.length > 0 || players[1].history.length > 0 || currentThrows.length > 0;
       if (isGameStarted) {
@@ -1100,16 +1220,13 @@
       }
     };
 
-    const currentActiveRemaining = confirmStage === "next" ? activePlayer.remainingScore : roundState.remainingScore;
-    const currentRoundSubtotal = roundState.subtotal;
-
     const p1DisplayScore = activePlayerIndex === 0 ? currentActiveRemaining : players[0].remainingScore;
     const p2DisplayScore = activePlayerIndex === 1 ? currentActiveRemaining : players[1].remainingScore;
 
-    // 【超重要バグ修正】常に3要素を持つ配列を保証し、interactiveSteps.map が絶対にクラッシュしないようにする設計
+    // 常に3要素を持つ配列を保証し、interactiveSteps.map が絶対にクラッシュしないようにする設計
     const getInteractiveArrangementSteps = () => {
       const remainingAtStart = activePlayer.remainingScore;
-      const originalRoute = getSteelDartsArrangement(remainingAtStart, bullType);
+      const originalRoute = getSteelDartsArrangement(remainingAtStart, bullType, outMode);
       
       const fallbackArray = [
         { target: "-", hit: null, status: "pending" },
@@ -1118,7 +1235,6 @@
       ];
 
       if (!originalRoute || originalRoute.includes("No finish") || originalRoute.includes("Score >") || originalRoute.includes("No checkout")) {
-        // 残り点数が未チェックアウト帯の場合はすべて pending 状態のハイフン配列を返す
         return fallbackArray;
       }
       
@@ -1155,7 +1271,7 @@
           }
         } else {
           if (hasDeviated && currentRemaining > 0 && currentRemaining <= 170) {
-            const recoveryRoute = getSteelDartsArrangement(currentRemaining, bullType);
+            const recoveryRoute = getSteelDartsArrangement(currentRemaining, bullType, outMode);
             if (recoveryRoute && !recoveryRoute.includes("No")) {
               const recoverySteps = recoveryRoute.split(" - ");
               const nextRecoveryTarget = recoverySteps[0] || "-";
@@ -1173,7 +1289,7 @@
                 isRecovery: true
               });
             }
-            hasDeviated = false; // 以降のループステップでは追加でリカバリーフラグを立てない
+            hasDeviated = false;
           } else {
             calculatedSteps.push({
               target: theoreticalTarget || "-",
@@ -1184,7 +1300,6 @@
         }
       }
 
-      // 要素数が万が一3に満たない場合のために、末尾をハイフンオブジェクトで補完して確実に3要素の配列にする
       while (calculatedSteps.length < 3) {
         calculatedSteps.push({ target: "-", hit: null, status: "pending" });
       }
@@ -1203,7 +1318,7 @@
           { target: "-", hit: null, status: "pending" }
         ];
       }
-    }, [activePlayer.remainingScore, currentThrows, bullType]);
+    }, [activePlayer.remainingScore, currentThrows, bullType, outMode]);
 
     return React.createElement(
       "div",
@@ -1230,7 +1345,12 @@
 
       React.createElement(
         "main",
-        { className: "flex-grow flex flex-col lg:flex-row justify-center items-stretch relative z-10 p-2 md:p-4 gap-4 max-w-5xl mx-auto w-full" },
+        { className: "flex-grow flex flex-col lg:flex-row justify-center items-stretch relative z-10 p-2 md:p-4 gap-4 max-w-5xl mx-auto w-full", onClick: (e) => {
+            if (editingThrowIndex === null) return;
+            const targetEl = e.target && typeof e.target.closest === 'function' ? e.target : null;
+            const interactiveTarget = targetEl ? targetEl.closest('button, svg, input, label, [data-throw-slot="true"]') : null;
+            if (!interactiveTarget) setEditingThrowIndex(null);
+          } },
         
         React.createElement(
           "div",
@@ -1297,7 +1417,7 @@
                 { 
                   ref: boardRef, 
                   onClick: handleBoardClick, 
-                  onTouchStart: (e) => { e.preventDefault(); handleBoardClick(e); }, 
+                  onTouchEnd: (e) => { e.preventDefault(); handleBoardClick(e); }, 
                   viewBox: "-210 -210 420 420", 
                   className: "w-full h-full drop-shadow-[0_15px_30px_rgba(0,0,0,0.95)] overflow-visible cursor-crosshair", 
                   style: { touchAction: "none" } 
@@ -1352,6 +1472,68 @@
                   filter: "url(#marker-glow)",
                   className: "transition-all duration-150" 
                 }))
+              ),
+              // ── Top-Left: 1本消去 ──────────────────────────────
+              React.createElement("button", {
+                className: "corner-btn cb-tl cb-undo",
+                onClick: (e) => { e.stopPropagation(); handleUndoSingleDart(); },
+                disabled: currentThrows.length === 0,
+                title: "最後の1本を取り消す"
+              },
+                React.createElement("span", { className: "cb-icon" },
+                  React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "3.2", strokeLinecap: "round", strokeLinejoin: "round" },
+                    React.createElement("path", { d: "M3 7v6h6" }),
+                    React.createElement("path", { d: "M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" })
+                  )
+                )
+              ),
+              // ── Top-Right: リセット ────────────────────────────
+              React.createElement("button", {
+                className: "corner-btn cb-tr cb-reset",
+                onClick: (e) => { e.stopPropagation(); handleFlushRound(); },
+                disabled: currentThrows.length === 0 && confirmStage !== "next",
+                title: "このラウンドをリセット"
+              },
+                React.createElement("span", { className: "cb-icon" },
+                  React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "3.2", strokeLinecap: "round", strokeLinejoin: "round" },
+                    React.createElement("polyline", { points: "3 6 5 6 21 6" }),
+                    React.createElement("path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }),
+                    React.createElement("line", { x1: "10", y1: "11", x2: "10", y2: "17" }),
+                    React.createElement("line", { x1: "14", y1: "11", x2: "14", y2: "17" })
+                  )
+                )
+              ),
+              // ── Bottom-Left: プレイヤーを戻す ─────────────────
+              React.createElement("button", {
+                className: `corner-btn cb-bl cb-prev${undoConfirmStage === "confirm" ? " pulsing" : ""}`,
+                onClick: (e) => { e.stopPropagation(); handleUndoCommittedTurn(); },
+                disabled: turnHistoryState.length === 0,
+                title: "前のプレイヤーのターンに戻る"
+              },
+                React.createElement("span", { className: "cb-icon" },
+                  React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "3.2", strokeLinecap: "round", strokeLinejoin: "round" },
+                    React.createElement("path", { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" }),
+                    React.createElement("polyline", { points: "3 3 3 8 8 8" })
+                  )
+                )
+              ),
+              // ── Bottom-Right: OK / 次へ ────────────────────────
+              React.createElement("button", {
+                className: `corner-btn cb-br cb-ok${confirmStage === "next" ? " next-mode" : ""}`,
+                onClick: (e) => { e.stopPropagation(); handleCommitRound(); },
+                disabled: currentThrows.length === 0 && confirmStage !== "next",
+                title: confirmStage === "next" ? "次のプレイヤーへ" : "スコア確定"
+              },
+                React.createElement("span", { className: "cb-icon" },
+                  confirmStage === "next"
+                    ? React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "3.2", strokeLinecap: "round", strokeLinejoin: "round" },
+                        React.createElement("path", { d: "M5 12h14" }),
+                        React.createElement("path", { d: "m12 5 7 7-7 7" })
+                      )
+                    : React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "3.2", strokeLinecap: "round", strokeLinejoin: "round" },
+                        React.createElement("polyline", { points: "20 6 9 17 4 12" })
+                      )
+                )
               )
             ),
             React.createElement(
@@ -1381,6 +1563,7 @@
                   "div",
                   { 
                     key: idx, 
+                    'data-throw-slot': 'true',
                     onClick: () => {
                       if (isFocused) {
                         setEditingThrowIndex(null);
@@ -1506,7 +1689,7 @@
                 { className: "grid grid-cols-3 gap-2" },
                 React.createElement("button", { onClick: () => handleUndoSingleDart(), className: "py-3.5 bg-zinc-950 hover:bg-[#141419] border border-zinc-800 rounded-xl flex items-center justify-center gap-1.5 active:translate-y-0.5 transition-all cursor-pointer text-zinc-400 text-xs font-bold", title: "直近の投げを1回分取り消す" }, React.createElement(Icons.Undo2, null), React.createElement("span", null, "1本消去")),
                 React.createElement("button", { onClick: () => handleFlushRound(), className: "py-3.5 bg-zinc-950 hover:bg-[#1c1414] border border-rose-900/50 rounded-xl flex items-center justify-center gap-1.5 active:translate-y-0.5 transition-all cursor-pointer text-rose-400 text-xs font-bold", title: "このターンの全投擲をゼロに戻す" }, React.createElement(Icons.Trash2, null), React.createElement("span", null, "リセット")),
-                React.createElement("button", { onClick: handleUndoCommittedTurn, disabled: turnHistoryState.length === 0, className: "py-3.5 bg-zinc-950 hover:bg-[#1c1c14] border border-amber-900/50 rounded-xl flex items-center justify-center gap-1.5 active:translate-y-0.5 transition-all disabled:opacity-25 disabled:pointer-events-none cursor-pointer text-amber-500 text-xs font-bold", title: "一つ前のプレイヤーのターンの状態に巻き戻す" }, React.createElement(Icons.RotateCcw, null), React.createElement("span", null, "プレイヤーを戻す"))
+                React.createElement("button", { onClick: handleUndoCommittedTurn, disabled: turnHistoryState.length === 0, className: `py-3.5 border rounded-xl flex items-center justify-center gap-1.5 active:translate-y-0.5 transition-all disabled:opacity-25 disabled:pointer-events-none cursor-pointer text-xs font-bold ${undoConfirmStage === "confirm" ? "bg-amber-500/20 border-amber-400 text-amber-200 assist-pulse" : "bg-zinc-950 hover:bg-[#1c1c14] border-amber-900/50 text-amber-500"}`, title: "一つ前のプレイヤーのターンの状態に巻き戻す" }, React.createElement(Icons.RotateCcw, null), React.createElement("span", null, undoConfirmStage === "confirm" ? "もう一度で確定 ⚠️" : "プレイヤーを戻す"))
               ),
               React.createElement(
                 "button",
@@ -1604,7 +1787,7 @@
                     setP1StartScore(score);
                     setP2StartScore(score);
                   },
-                  className: `py-2.5 rounded-xl text-sm font-black border transition cursor-pointer ${p1StartScore === score && p2StartScore === score ? "bg-amber-500 border-amber-400 text-black shadow-lg" : "bg-zinc-900/60 border-zinc-700 text-zinc-400 hover:text-amber-400"}`
+                  className: `py-2.5 rounded-xl text-sm font-black border transition cursor-pointer ${p1StartScore === score && p2StartScore === score ? "bg-amber-500 border-amber-400 text-black" : "bg-zinc-900/60 border-zinc-700 text-zinc-400 hover:text-amber-400"}`
                 },
                 score
               ))
@@ -1658,6 +1841,13 @@
                 className: "w-full py-4 bg-gradient-to-r from-amber-400 to-amber-500 border border-amber-300 text-black font-black text-sm rounded-xl transition uppercase cursor-pointer shadow-lg shadow-amber-500/10 tracking-widest"
               },
               "対戦開始 START 🎯"
+            ),
+            // [FIX-8] 復帰ボタン（セーブデータがある場合のみ表示）
+            React.createElement("button", {
+              id: "restore-btn",
+              onClick: handleRestoreSave,
+              className: "w-full py-2.5 mt-2 bg-zinc-900 border border-amber-500/40 text-amber-400 font-black text-xs rounded-xl transition uppercase cursor-pointer tracking-widest hidden"
+            }, "📂 前回のゲームを復帰する"
             )
           )
         )
@@ -1740,6 +1930,20 @@
   const root = ReactDOM.createRoot(document.getElementById("root"));
   root.render(React.createElement(App, null));
 })();
+
+// Show restore button if save data exists (runs after React mount)
+setTimeout(() => {
+  try {
+    const raw = localStorage.getItem('darts_save');
+    if (raw) {
+      const d = JSON.parse(raw);
+      if (Date.now() - (d.savedAt || 0) < 86400000) {
+        const btn = document.getElementById('restore-btn');
+        if (btn) btn.classList.remove('hidden');
+      }
+    }
+  } catch(e) {}
+}, 400);
     </script>
   </body>
 </html>
