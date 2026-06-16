@@ -621,13 +621,18 @@
     };
 
     const handleUndoSingleDart=()=>{
+      // "next"(OK押し後) / "gameover" 中は単ダーツUNDO禁止
+      // → スコア確定後に投げを遡って点数を書き換えられるのを防ぐ
+      if(confirmStage==="next"||confirmStage==="gameover")return;
       if(currentThrows.length===0)return;
-      playSound("revert");setCurrentThrows(currentThrows.slice(0,-1));setEditingThrowIndex(null);setConfirmStage("throwing");
+      playSound("revert");setCurrentThrows(currentThrows.slice(0,-1));setEditingThrowIndex(null);
     };
 
     const handleFlushRound=()=>{
+      if(confirmStage==="gameover")return;
       playSound("revert");
       if(confirmStage==="next"){
+        // CLEAR in next-stage = ターン全体を取り消してthrowingに戻す
         const prev=turnHistoryState[turnHistoryState.length-1];
         if(prev){setPlayers(prev.players);setActivePlayerIndex(prev.activePlayerIndex);setTurnHistoryState(turnHistoryState.slice(0,-1));}
       }
@@ -896,9 +901,9 @@
               React.createElement("div",{className:"col-span-3 flex flex-col justify-between gap-2 self-stretch"},
                 React.createElement("button",{onClick:()=>handleKeypadTap(25,1,"outer"),className:"flex-1 rounded-xl font-mono font-black uppercase border-2 flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 border-[#16a34a] text-[#16a34a] hover:bg-emerald-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)]",title:bullType==="fat"?"Outer Bull 50":"Outer Bull 25"},
                   React.createElement("span",{className:"w-9 h-9 flex items-center justify-center"},
-                    React.createElement("svg",{viewBox:"0 0 40 40",className:"w-9 h-9",fill:"none",stroke:"currentColor",strokeWidth:"2.2"},
-                      React.createElement("circle",{cx:"20",cy:"20",r:"14.5",opacity:"0.92"}),
-                      React.createElement("circle",{cx:"20",cy:"20",r:"6",opacity:"0.34"})
+                    React.createElement("svg",{viewBox:"0 0 40 40",className:"w-9 h-9",fill:"none"},
+                      React.createElement("circle",{cx:"20",cy:"20",r:"14.5",fill:"currentColor",stroke:"none",opacity:"0.90"}),
+                      React.createElement("circle",{cx:"20",cy:"20",r:"7.2",fill:"#09090c",stroke:"none"})
                     )
                   ),
                   React.createElement("span",{className:"leading-tight text-xs font-black tracking-tight"},"OUT",React.createElement("br",null),"BULL"),
