@@ -83,48 +83,72 @@
         50% { border-color: rgba(245,158,11,1); box-shadow: 0 0 12px rgba(245,158,11,0.45); }
       }
 
-      /* ── コーナーボタン（サイズ縮小・洗練） ── */
-      .corner-btn {
-        position: absolute;
+      /* ── アクションバー（コーナーボタン廃止後の代替） ── */
+      .action-bar-btn {
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 3px;
         cursor: pointer;
         border: 1px solid;
-        border-radius: 9999px;
-        transition: all 0.14s cubic-bezier(0.4,0,0.2,1);
+        border-radius: 14px;
+        transition: all 0.13s cubic-bezier(0.4,0,0.2,1);
         -webkit-tap-highlight-color: transparent;
         touch-action: manipulation;
-        z-index: 30;
-        width: clamp(48px, 18.5%, 78px);
-        aspect-ratio: 1;
-        padding: 0;
-        background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.12), rgba(18,18,26,0.96) 42%, rgba(7,7,12,0.98) 100%);
-        backdrop-filter: blur(12px);
-        box-shadow: 0 10px 28px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.72);
+        min-height: 52px;
+        padding: 6px 8px;
+        font-size: 8px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        flex: 1;
       }
-      .corner-btn:active { transform: scale(0.88); }
-      .corner-btn:disabled { opacity: 0.2; pointer-events: none; }
+      .action-bar-btn:active { transform: scale(0.93) translateY(1px); }
+      .action-bar-btn:disabled { opacity: 0.22; pointer-events: none; }
+      .action-bar-btn svg { width: 16px; height: 16px; }
 
-      .cb-tl { top: 3%; left: 3%; }
-      .cb-tr { top: 3%; right: 3%; }
-      .cb-bl { bottom: 3%; left: 3%; }
-      .cb-br { bottom: 3%; right: 3%; }
+      .ab-undo   { border-color: rgba(113,113,122,0.35); color: #a1a1aa; background: rgba(14,14,20,0.9); }
+      .ab-undo:hover:not(:disabled)  { border-color: #71717a; color: #f4f4f5; }
+      .ab-clear  { border-color: rgba(159,18,57,0.35); color: #fb7185; background: rgba(14,6,10,0.9); }
+      .ab-clear:hover:not(:disabled) { border-color: #f43f5e; color: #ffe4e6; }
+      .ab-prev   { border-color: rgba(120,53,15,0.38); color: #f59e0b; background: rgba(14,10,4,0.9); }
+      .ab-prev:hover:not(:disabled)  { border-color: #f59e0b; color: #fde047; }
+      .ab-prev.pulsing { animation: pulseBorder 1.8s infinite ease-in-out; }
+      .ab-miss   { border-color: rgba(159,18,57,0.5); color: #fda4af; background: rgba(28,6,12,0.9); }
+      .ab-miss:hover:not(:disabled)  { border-color: #fb7185; color: #fff1f2; }
 
-      .cb-undo  { border-color: rgba(113,113,122,0.4); color: #a1a1aa; }
-      .cb-undo:hover:not(:disabled)  { border-color: #71717a; color: #f4f4f5; background: rgba(28,28,36,0.94); }
-      .cb-reset { border-color: rgba(159,18,57,0.38); color: #fb7185; }
-      .cb-reset:hover:not(:disabled) { border-color: #f43f5e; color: #ffe4e6; background: rgba(36,10,18,0.94); }
-      .cb-prev  { border-color: rgba(120,53,15,0.42); color: #f59e0b; }
-      .cb-prev:hover:not(:disabled)  { border-color: #f59e0b; color: #fde047; background: rgba(36,20,6,0.94); }
-      .cb-prev.pulsing { animation: pulseBorder 1.8s infinite ease-in-out; }
-      .cb-ok    { border-color: rgba(245,158,11,0.5); color: #fbbf24; background: rgba(28,20,4,0.94); }
-      .cb-ok:hover:not(:disabled) { border-color: #fbbf24; color: #fef08a; background: rgba(42,30,4,0.94); }
-      .cb-ok.next-mode { border-color: rgba(16,185,129,0.6); color: #34d399; background: rgba(4,24,16,0.94); }
-      .cb-ok.next-mode:hover { border-color: #34d399; color: #a7f3d0; background: rgba(6,34,22,0.94); }
-
-      .cb-icon { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
-      .cb-icon svg { width: 48%; height: 48%; filter: drop-shadow(0 1px 4px rgba(0,0,0,0.35)); }
+      /* ── アクティブプレイヤーバナー ── */
+      .active-player-banner {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-radius: 10px;
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        background: rgba(245,158,11,0.08);
+        border: 1px solid rgba(245,158,11,0.25);
+        color: #fbbf24;
+        animation: activeBannerPulse 2.4s ease-in-out infinite;
+      }
+      .active-player-banner .dot {
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        background: #f59e0b;
+        animation: activeDotPulse 1.2s ease-in-out infinite;
+        flex-shrink: 0;
+      }
+      @keyframes activeBannerPulse {
+        0%,100% { border-color: rgba(245,158,11,0.25); }
+        50% { border-color: rgba(245,158,11,0.55); }
+      }
+      @keyframes activeDotPulse {
+        0%,100% { opacity:1; transform:scale(1); }
+        50% { opacity:0.5; transform:scale(0.7); }
+      }
 
       /* ── スライドトグル (BULL) ── */
       .slide-track {
@@ -235,16 +259,22 @@
       .setup-score-btn {
         background: rgba(14,14,20,0.9);
         border: 1px solid rgba(63,63,70,0.6);
-        border-radius: 8px;
-        color: #71717a;
-        font-size: 9px;
+        border-radius: 10px;
+        color: #a1a1aa;
+        font-size: 13px;
         font-weight: 900;
         cursor: pointer;
         transition: all 0.12s;
-        padding: 4px 0;
-        width: 100%;
+        min-height: 44px;
+        min-width: 44px;
+        padding: 0 8px;
+        touch-action: manipulation;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
-      .setup-score-btn:active { transform: scale(0.93); background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.4); color: #f59e0b; }
+      .setup-score-btn:hover { border-color: rgba(245,158,11,0.35); color: #f59e0b; }
+      .setup-score-btn:active { transform: scale(0.91); background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.5); color: #f59e0b; }
 
       .history-font { font-size: 2.2vw; }
       @media (min-width: 640px) { .history-font { font-size: 10px; } }

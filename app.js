@@ -964,41 +964,21 @@
         null,
         React.createElement(
           "div",
-          { className: "mb-1.5 flex items-center justify-between px-1" },
-          alignment === "left"
+          { className: "mb-1.5 px-0.5" },
+          isActive
             ? React.createElement(
-                React.Fragment,
-                null,
-                React.createElement(
-                  "span",
-                  {
-                    className:
-                      "text-[9px] font-black text-zinc-400 tracking-widest truncate max-w-[90px] uppercase",
-                  },
-                  player.name,
-                ),
-                isActive &&
-                  React.createElement(
-                    "span",
-                    { className: "text-[8px] text-amber-500 animate-pulse" },
-                    "●",
-                  ),
+                "div",
+                { className: "active-player-banner" },
+                React.createElement("span", { className: "dot" }),
+                React.createElement("span", { className: "truncate" }, player.name),
+                React.createElement("span", { className: "text-amber-500/60 text-[7px] font-bold shrink-0" }, "YOUR TURN"),
               )
             : React.createElement(
-                React.Fragment,
-                null,
-                isActive &&
-                  React.createElement(
-                    "span",
-                    { className: "text-[8px] text-amber-500 animate-pulse" },
-                    "●",
-                  ),
+                "div",
+                { className: "px-1 py-1 rounded-lg text-center" },
                 React.createElement(
                   "span",
-                  {
-                    className:
-                      "text-[9px] font-black text-zinc-400 tracking-widest truncate max-w-[90px] ml-auto uppercase",
-                  },
+                  { className: "text-[9px] font-black text-zinc-600 tracking-widest truncate uppercase block" },
                   player.name,
                 ),
               ),
@@ -1112,6 +1092,7 @@
   function App() {
     // ── ゲーム設定 ──
     const [gameMode, setGameMode] = useState("01"); // "01" | "countup"
+    const [playerCount, setPlayerCount] = useState(2); // 1 or 2
     const [p1StartScore, setP1StartScore] = useState(501);
     const [p2StartScore, setP2StartScore] = useState(501);
     const [outMode, setOutMode] = useState("single");
@@ -1257,6 +1238,7 @@
               winner,
               checkoutPref,
               cuRounds,
+              playerCount,
               savedAt: Date.now(),
             }),
           );
@@ -1422,9 +1404,10 @@
       try {
         localStorage.removeItem(LOCAL_STORAGE_KEY);
       } catch (e) {}
+      const p2Name = playerCount === 1 ? "__CPU__" : (players[1].name.trim() || "PLAYER 2");
       setPlayers([
         makePlayer("p1", players[0].name.trim() || "PLAYER 1", p1StartScore),
-        makePlayer("p2", players[1].name.trim() || "PLAYER 2", p2StartScore),
+        makePlayer("p2", p2Name, p2StartScore),
       ]);
       setActivePlayerIndex(0);
       setCurrentThrowsImmediate([]);
@@ -1699,7 +1682,10 @@
         // winner確定後のNEXT押下は無視（二重チェック）
         if (winner) return;
         playSound("click");
-        setActivePlayerIndex(activePlayerIndex === 0 ? 1 : 0);
+        // 1Pモード(countup)では activePlayerIndex は常に0のまま
+        if (playerCount !== 1 || gameMode !== "countup") {
+          setActivePlayerIndex(activePlayerIndex === 0 ? 1 : 0);
+        }
         setCurrentThrowsImmediate([]);
         setEditingThrowIndex(null);
         setConfirmStage("throwing");
@@ -1750,6 +1736,7 @@
         setWinner(d.winner || null);
         setCheckoutPref(d.checkoutPref || "double");
         setCuRounds(d.cuRounds || COUNT_UP_ROUNDS);
+        setPlayerCount(d.playerCount || 2);
         if (d.players && d.players[0] && d.players[1]) {
           setP1StartScore(d.players[0].initialScore);
           setP2StartScore(d.players[1].initialScore);
@@ -1955,17 +1942,17 @@
             React.createElement(
               "div",
               {
-                className: `flex items-center justify-between bg-zinc-950/70 border rounded-xl px-3 py-2.5 shadow-inner min-h-[42px] gap-2 ${editingThrowIndex !== null ? "border-sky-500/60 shadow-[0_0_18px_rgba(56,189,248,0.12)]" : "border-zinc-800/80"}`,
+                className: `flex items-center justify-center bg-zinc-950/70 border rounded-xl px-3 py-2.5 shadow-inner min-h-[42px] ${editingThrowIndex !== null ? "border-sky-500/60 shadow-[0_0_18px_rgba(56,189,248,0.12)]" : "border-zinc-800/80"}`,
               },
               React.createElement(
                 "div",
                 {
-                  className: `assist-bar ${assistInfo.color}${assistInfo.pulse ? " assist-active" : ""} flex-1 text-left tracking-[0.04em] overflow-hidden`,
+                  className: `assist-bar ${assistInfo.color}${assistInfo.pulse ? " assist-active" : ""} text-center tracking-[0.04em] overflow-hidden w-full`,
                 },
                 React.createElement(
                   "span",
                   {
-                    className: "assist-line block",
+                    className: "assist-line block text-center",
                     style: {
                       fontSize:
                         assistInfo.text && assistInfo.text.length > 28
@@ -1976,15 +1963,6 @@
                   assistInfo.text || "\u00A0",
                 ),
               ),
-              assistInfo.sub &&
-                React.createElement(
-                  "span",
-                  {
-                    className:
-                      "text-[10px] font-mono font-bold text-zinc-500 shrink-0 whitespace-nowrap",
-                  },
-                  assistInfo.sub,
-                ),
             ),
           ),
 
@@ -2187,111 +2165,10 @@
                   });
                 }),
               ),
-              /* Corner Buttons */
-              React.createElement(
-                "button",
-                {
-                  className: "corner-btn cb-tl cb-undo",
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    handleUndoSingleDart();
-                  },
-                  disabled: currentThrows.length === 0,
-                  title: "Undo last dart",
-                },
-                React.createElement(
-                  "span",
-                  { className: "cb-icon" },
-                  React.createElement(Icons.Undo2, null),
-                ),
-              ),
-              React.createElement(
-                "button",
-                {
-                  className: "corner-btn cb-tr cb-reset",
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    handleFlushRound();
-                  },
-                  disabled:
-                    (currentThrows.length === 0 && confirmStage !== "next") ||
-                    confirmStage === "gameover",
-                  title: "Clear turn",
-                },
-                React.createElement(
-                  "span",
-                  { className: "cb-icon" },
-                  React.createElement(Icons.Trash2, null),
-                ),
-              ),
-              React.createElement(
-                "button",
-                {
-                  className: `corner-btn cb-bl cb-prev${undoConfirmStage === "confirm" ? " pulsing" : ""}`,
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    handleUndoCommittedTurn();
-                  },
-                  disabled: turnHistoryState.length === 0,
-                  title: "Undo previous turn",
-                },
-                React.createElement(
-                  "span",
-                  { className: "cb-icon" },
-                  React.createElement(Icons.RotateCcw, null),
-                ),
-              ),
-              React.createElement(
-                "button",
-                {
-                  className: `corner-btn cb-br cb-ok${confirmStage === "next" ? " next-mode" : ""}`,
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    handleCommitRound();
-                  },
-                  disabled:
-                    currentThrows.length === 0 && confirmStage !== "next",
-                  title:
-                    confirmStage === "next" ? "Next player" : "Commit score",
-                },
-                React.createElement(
-                  "span",
-                  { className: "cb-icon" },
-                  confirmStage === "next"
-                    ? React.createElement(
-                        "svg",
-                        {
-                          xmlns: "http://www.w3.org/2000/svg",
-                          viewBox: "0 0 24 24",
-                          fill: "none",
-                          stroke: "currentColor",
-                          strokeWidth: "3",
-                          strokeLinecap: "round",
-                          strokeLinejoin: "round",
-                        },
-                        React.createElement("path", { d: "M5 12h14" }),
-                        React.createElement("path", { d: "m12 5 7 7-7 7" }),
-                      )
-                    : React.createElement(
-                        "svg",
-                        {
-                          xmlns: "http://www.w3.org/2000/svg",
-                          viewBox: "0 0 24 24",
-                          fill: "none",
-                          stroke: "currentColor",
-                          strokeWidth: "3",
-                          strokeLinecap: "round",
-                          strokeLinejoin: "round",
-                        },
-                        React.createElement("polyline", {
-                          points: "20 6 9 17 4 12",
-                        }),
-                      ),
-                ),
-              ),
+              /* Corner buttons removed - using action bar below */
             ),
 
-            React.createElement(
+            playerCount !== 1 && React.createElement(
               "div",
               { className: "w-[28%] flex flex-col justify-center shrink-0" },
               React.createElement(PlayerCockpit, {
@@ -2306,12 +2183,66 @@
             ),
           ),
 
+          /* ── アクションバー（ミス + 操作系） ── */
+          React.createElement(
+            "div",
+            { className: "w-full max-w-sm mt-2 flex gap-1.5 relative z-20" },
+            React.createElement(
+              "button",
+              {
+                className: "action-bar-btn ab-miss",
+                onClick: () => handleKeypadTap(0),
+                disabled: winner || confirmStage === "next" || confirmStage === "gameover" || (!canAddMoreThrows && editingThrowIndex === null),
+                title: "Miss",
+              },
+              React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" },
+                React.createElement("circle", { cx: "12", cy: "12", r: "9", opacity: "0.35" }),
+                React.createElement("line", { x1: "8", y1: "8", x2: "16", y2: "16" }),
+                React.createElement("line", { x1: "16", y1: "8", x2: "8", y2: "16" }),
+              ),
+              React.createElement("span", null, "MISS"),
+            ),
+            React.createElement(
+              "button",
+              {
+                className: "action-bar-btn ab-undo",
+                onClick: handleUndoSingleDart,
+                disabled: currentThrows.length === 0 || confirmStage === "next" || confirmStage === "gameover",
+                title: "Undo last dart",
+              },
+              React.createElement(Icons.Undo2, null),
+              React.createElement("span", null, "UNDO"),
+            ),
+            React.createElement(
+              "button",
+              {
+                className: "action-bar-btn ab-clear",
+                onClick: handleFlushRound,
+                disabled: (currentThrows.length === 0 && confirmStage !== "next") || confirmStage === "gameover",
+                title: "Clear turn",
+              },
+              React.createElement(Icons.Trash2, null),
+              React.createElement("span", null, "CLEAR"),
+            ),
+            React.createElement(
+              "button",
+              {
+                className: `action-bar-btn ab-prev${undoConfirmStage === "confirm" ? " pulsing" : ""}`,
+                onClick: handleUndoCommittedTurn,
+                disabled: turnHistoryState.length === 0,
+                title: "Undo previous turn",
+              },
+              React.createElement(Icons.RotateCcw, null),
+              React.createElement("span", null, undoConfirmStage === "confirm" ? "SURE?" : "PREV"),
+            ),
+          ),
+
           /* ── Throw Slots + Round Sum ── */
           React.createElement(
             "div",
             {
               className:
-                "w-full max-w-sm mt-2 soft-metal score-slot p-2 rounded-xl border border-zinc-800/90 flex justify-between items-center relative z-20 shadow-[0_8px_20px_rgba(0,0,0,0.25)]",
+                "w-full max-w-sm mt-1.5 soft-metal score-slot p-2 rounded-xl border border-zinc-800/90 flex justify-between items-center relative z-20 shadow-[0_8px_20px_rgba(0,0,0,0.25)]",
             },
             React.createElement(
               "div",
@@ -2400,22 +2331,10 @@
                       "grid grid-cols-3 gap-1.5 p-1 bg-black/40 rounded-xl border border-zinc-800",
                   },
                   [
-                    [
-                      "Single",
-                      1,
-                      "py-3 rounded-lg text-xs font-black uppercase cursor-pointer transition-all border",
-                    ],
-                    [
-                      "Double",
-                      2,
-                      "py-3 rounded-lg text-xs font-black uppercase cursor-pointer transition-all border",
-                    ],
-                    [
-                      "Triple",
-                      3,
-                      "py-3 rounded-lg text-xs font-black uppercase cursor-pointer transition-all border",
-                    ],
-                  ].map(([lbl, m, cls]) =>
+                    ["S", "Single", 1, "py-2 rounded-lg font-black uppercase cursor-pointer transition-all border"],
+                    ["D", "Double", 2, "py-2 rounded-lg font-black uppercase cursor-pointer transition-all border"],
+                    ["T", "Triple", 3, "py-2 rounded-lg font-black uppercase cursor-pointer transition-all border"],
+                  ].map(([prefix, lbl, m, cls]) =>
                     React.createElement(
                       "button",
                       {
@@ -2426,7 +2345,10 @@
                         },
                         className: `${cls} ${padMultiplier === m ? (m === 1 ? "bg-amber-500 border-amber-400 text-black shadow-[0_3px_8px_rgba(245,158,11,0.2)] translate-y-[-1px]" : m === 2 ? "bg-rose-600 border-rose-500 text-white shadow-[0_3px_8px_rgba(225,29,72,0.25)] translate-y-[-1px]" : "bg-emerald-600 border-emerald-500 text-white shadow-[0_3px_8px_rgba(16,185,129,0.25)] translate-y-[-1px]") : "bg-transparent text-zinc-500 border-transparent active:translate-y-0.5"}`,
                       },
-                      lbl,
+                      React.createElement("div", { className: "flex flex-col items-center leading-tight gap-0" },
+                        React.createElement("span", { className: "text-[15px] font-black leading-none" }, prefix),
+                        React.createElement("span", { className: "text-[7px] font-bold opacity-70 leading-tight" }, lbl),
+                      ),
                     ),
                   ),
                 ),
@@ -2591,108 +2513,21 @@
               isRoundBurst &&
                 React.createElement(
                   "div",
-                  {
-                    className:
-                      "w-full py-2.5 rounded-xl bg-rose-950/60 border border-rose-500/60 text-center",
-                  },
-                  React.createElement(
-                    "span",
-                    {
-                      className:
-                        "text-rose-400 font-black text-sm tracking-wider",
-                    },
-                    "💥 BURST",
-                  ),
-                  React.createElement(
-                    "p",
-                    { className: "text-rose-600 text-[9px] mt-0.5" },
-                    "Clear or commit to continue",
-                  ),
+                  { className: "w-full py-2 rounded-xl bg-rose-950/60 border border-rose-500/60 text-center" },
+                  React.createElement("span", { className: "text-rose-400 font-black text-xs tracking-wider" }, "💥 BUST"),
                 ),
-              React.createElement(
-                "div",
-                { className: "grid grid-cols-3 gap-2 items-center" },
-                React.createElement(
-                  "button",
-                  {
-                    onClick: () => handleUndoSingleDart(),
-                    className:
-                      "h-9 bg-zinc-950 hover:bg-[#141419] border border-zinc-800 rounded-xl flex items-center justify-center gap-1 active:translate-y-0.5 transition-all cursor-pointer text-zinc-400 text-[10px] font-bold",
-                  },
-                  React.createElement(
-                    "span",
-                    {
-                      style: {
-                        width: 13,
-                        height: 13,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      },
-                    },
-                    React.createElement(Icons.Undo2, null),
-                  ),
-                  React.createElement("span", null, "UNDO"),
-                ),
-                React.createElement(
-                  "button",
-                  {
-                    onClick: () => handleFlushRound(),
-                    className:
-                      "h-9 bg-zinc-950 hover:bg-[#1c1414] border border-rose-900/50 rounded-xl flex items-center justify-center gap-1 active:translate-y-0.5 transition-all cursor-pointer text-rose-400 text-[10px] font-bold",
-                  },
-                  React.createElement(
-                    "span",
-                    {
-                      style: {
-                        width: 13,
-                        height: 13,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      },
-                    },
-                    React.createElement(Icons.Trash2, null),
-                  ),
-                  React.createElement("span", null, "CLEAR"),
-                ),
-                React.createElement(
-                  "button",
-                  {
-                    onClick: handleUndoCommittedTurn,
-                    disabled: turnHistoryState.length === 0,
-                    className: `h-9 border rounded-xl flex items-center justify-center gap-1 active:translate-y-0.5 transition-all disabled:opacity-20 disabled:pointer-events-none cursor-pointer text-[10px] font-bold ${undoConfirmStage === "confirm" ? "bg-amber-500/20 border-amber-400 text-amber-200" : "bg-zinc-950 hover:bg-[#1c1c14] border-amber-900/50 text-amber-500"}`,
-                  },
-                  React.createElement(
-                    "span",
-                    {
-                      style: {
-                        width: 13,
-                        height: 13,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      },
-                    },
-                    React.createElement(Icons.RotateCcw, null),
-                  ),
-                  React.createElement(
-                    "span",
-                    null,
-                    undoConfirmStage === "confirm"
-                      ? "PRESS AGAIN"
-                      : "PREV TURN",
-                  ),
-                ),
-              ),
               React.createElement(
                 "button",
                 {
                   onClick: handleCommitRound,
-                  className: `w-full py-4 rounded-2xl font-fliqlo font-black text-sm tracking-[0.18em] uppercase transition-all duration-150 border cursor-pointer ${confirmStage === "next" ? "bg-emerald-600 border-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)]" : "bg-gradient-to-r from-amber-400 to-amber-500 border-amber-300 text-black shadow-[0_8px_20px_rgba(245,158,11,0.18)]"}`,
+                  disabled: currentThrows.length === 0 && confirmStage !== "next",
+                  className: `w-full py-4 rounded-2xl font-fliqlo font-black text-sm tracking-[0.18em] uppercase transition-all duration-200 border cursor-pointer ${
+                    currentThrows.length === 0 && confirmStage !== "next"
+                      ? "bg-zinc-800 border-zinc-700 text-zinc-600 cursor-not-allowed opacity-50"
+                      : confirmStage === "next"
+                        ? "bg-emerald-600 border-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.25)]"
+                        : "bg-gradient-to-r from-amber-400 to-amber-500 border-amber-300 text-black shadow-[0_8px_20px_rgba(245,158,11,0.18)]"
+                  }`,
                 },
                 confirmStage === "next" ? "NEXT  →" : "OK",
               ),
@@ -2922,6 +2757,28 @@
                         },
                         s,
                       ),
+                    ),
+                  ),
+                ),
+
+              /* ── Count-Up専用: プレイヤー数 ── */
+              gameMode === "countup" &&
+                React.createElement(
+                  "div",
+                  { className: "space-y-2" },
+                  React.createElement("p", { className: "setup-section-label" }, "PLAYERS"),
+                  React.createElement(
+                    "div",
+                    { className: "grid grid-cols-2 gap-2" },
+                    [[1,"SOLO","👤"],[2,"VS","👥"]].map(([n,lbl,ico]) =>
+                      React.createElement("button", {
+                        key: n,
+                        onClick: () => { playSound("click"); setPlayerCount(n); },
+                        className: `setup-toggle-btn flex items-center justify-center gap-1.5 py-3 ${playerCount === n ? "setup-toggle-active" : "setup-toggle-inactive"}`,
+                      },
+                      React.createElement("span", null, ico),
+                      React.createElement("span", null, lbl),
+                      )
                     ),
                   ),
                 ),
