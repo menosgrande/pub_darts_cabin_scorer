@@ -1111,6 +1111,19 @@
           isActive,
           isBust,
         }),
+          // BUST強調オーバーレイ（視認性大幅向上）
+        isBust && React.createElement(
+          "div",
+          { 
+            className: "absolute inset-0 flex items-center justify-center bg-rose-600/90 backdrop-blur-sm rounded-2xl z-10 pointer-events-none" 
+          },
+          React.createElement(
+            "span", 
+            { 
+              className: "text-5xl font-black text-white tracking-[0.1em] animate-pulse drop-shadow-2xl" 
+            }, 
+            "BUST"
+          )
       ),
       React.createElement(
         "div",
@@ -1340,7 +1353,7 @@
     const currentActiveRemaining =
       gameMode === "01"
         ? confirmStage === "next"
-          ? activePlayer.remainingScore
+          ? activePlayer.remainingScore   // SOLOは常にactivePlayer使用
           : roundState.remainingScore
         : 0;
     const p1DisplayScore =
@@ -1951,18 +1964,15 @@
       } else if (confirmStage === "next") {
         // winner確定後のNEXT押下は無視（二重チェック）
         if (winner) return;
-        playSound("click");
-        // 1Pモード（01・Count-Up両方）では activePlayerIndex は常に0のまま
-        // 旧コードは `gameMode !== "countup"` も条件に含んでいたため、
-        // SOLOの01ゲームでP2(index=1)に切り替わってしまい、
-        // 2ターン目以降のスコアが見えないP2側に積まれるバグがあった。
-        if (playerCount !== 1) {
-          setActivePlayerIndex(activePlayerIndex === 0 ? 1 : 0);
-        }
-        setCurrentThrowsImmediate([]);
-        setEditingThrowIndex(null);
-        setConfirmStage("throwing");
-      }
+            playSound("click");
+          
+            if (playerCount !== 1) {
+              setActivePlayerIndex(activePlayerIndex === 0 ? 1 : 0);
+            }
+            setCurrentThrowsImmediate([]);
+            setEditingThrowIndex(null);
+            setConfirmStage("throwing");
+          }
     };
 
     const handleRestoreSave = () => {
