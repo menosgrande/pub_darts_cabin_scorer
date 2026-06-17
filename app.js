@@ -1218,7 +1218,6 @@
     const [playerCount, setPlayerCount] = useState(2);    // 1 | 2
     const [cpuMode, setCpuMode] = useState(false);        // CPU対戦ON/OFF
     const [cpuDifficulty, setCpuDifficulty] = useState("medium"); // easy|medium|hard|pro
-    const [cpuTurnPending, setCpuTurnPending] = useState(false);  // CPU投擲待ち
     const [helpLang, setHelpLang] = useState("ja");       // "ja" | "en"
     const [p1StartScore, setP1StartScore] = useState(501);
     const [p2StartScore, setP2StartScore] = useState(501);
@@ -1310,11 +1309,10 @@
     const isRoundBurst = gameMode === "01" && roundState.isBust;
     const currentRoundSubtotal = getSubtotal(currentThrows);
     // CPUが操作するのは P2(index=1) かつ throwing 中のみ（設定画面表示中は動かさない）
-    // !cpuTurnPending: CPU投擲アニメ中の二重発火を防ぐ
     // !editingThrowIndex: 編集モード中にCPUが割り込まないようにする
     const isCpuTurn = cpuMode && activePlayerIndex === 1
       && confirmStage === "throwing" && !winner && !showSettingsSetup
-      && editingThrowIndex === null && !cpuTurnPending;
+      && editingThrowIndex === null;
 
     // Count-Up用表示スコア
     const cuDisplayScore = (pi) => {
@@ -1393,7 +1391,7 @@
         if (cancelled || cpuThrows.length === 0) return;
         // winnerRef で最新のwinner状態を確認（stateクロージャ問題を回避）
         if (winnerRef.current) return;
-        const snap = { players: cloneDeep(p), activePlayerIndex: idx, confirmStage: "throwing", cpuTurnPending: false };
+        const snap = { players: cloneDeep(p), activePlayerIndex: idx, confirmStage: "throwing" };
         setCurrentThrowsImmediate(cpuThrows);
         if (cancelled) { setCurrentThrowsImmediate([]); return; }
         setTurnHistoryState(prev => [...prev, snap]);
@@ -1405,12 +1403,11 @@
           setPlayers(mp);
           const rel = pc === 1 ? [mp[0]] : mp;
           if (rel.every(pp => pp.history.length >= cu)) {
-            const s0 = mp[0].accumulatedScore, s1 = mp[1].accumulatedScore;
-            const isDraw = s0 === s1;
-            const w = isDraw ? mp[0] : s0 > s1 ? mp[0] : mp[1];
+            const isDraw = pc === 1 ? false : mp[0].accumulatedScore === mp[1].accumulatedScore;
+            const w = pc === 1 ? mp[0] : (isDraw || mp[0].accumulatedScore > mp[1].accumulatedScore) ? mp[0] : mp[1];
             setConfirmStage("gameover"); setCurrentThrowsImmediate([]);
             playSound("victory");
-            setWinner({ ...w, countUpResult: true, isDraw, scores: mp.map(pp => ({ name: pp.name, score: pp.accumulatedScore })) });
+            setWinner({ ...w, countUpResult: true, isDraw, scores: rel.map(pp => ({ name: pp.name, score: pp.accumulatedScore })) });
           } else {
             playSound("click"); setCurrentThrowsImmediate([]); setActivePlayerIndex(0); setConfirmStage("throwing");
           }
@@ -1483,6 +1480,10 @@
       winner,
       checkoutPref,
       cuRounds,
+      playerCount,
+      cpuMode,
+      cpuDifficulty,
+      helpLang,
       showSettingsSetup,
     ]);
 
@@ -1637,7 +1638,6 @@
         makePlayer("p1", players[0].name.trim() || "PLAYER 1", p1StartScore),
         makePlayer("p2", p2Name, p2StartScore),
       ]);
-      setCpuTurnPending(false);
       winnerRef.current = null; // winnerRefを即時リセット（CPUuseEffect誤発火防止）
       setActivePlayerIndex(0);
       setCurrentThrowsImmediate([]);
@@ -1774,7 +1774,6 @@
       if (confirmStage === "next" || confirmStage === "gameover" || isCpuTurn) return;
       if (currentThrows.length === 0) return;
       playSound("revert");
-      setCpuTurnPending(false);
       setCurrentThrowsImmediate(currentThrows.slice(0, -1));
       setEditingThrowIndex(null);
     };
@@ -1790,7 +1789,6 @@
           const prev = turnHistoryState[turnHistoryState.length - 1];
           setPlayers(prev.players);
           setActivePlayerIndex(prev.activePlayerIndex);
-          setCpuTurnPending(prev.cpuTurnPending !== undefined ? prev.cpuTurnPending : false);
           setTurnHistoryState(turnHistoryState.slice(0, -1));
         }
         setCurrentThrowsImmediate([]);
@@ -1819,7 +1817,6 @@
       const prev = turnHistoryState[turnHistoryState.length - 1];
       setPlayers(prev.players);
       setActivePlayerIndex(prev.activePlayerIndex);
-      setCpuTurnPending(prev.cpuTurnPending !== undefined ? prev.cpuTurnPending : false);
       setCurrentThrowsImmediate([]);
       setEditingThrowIndex(null);
       setWinner(null);
@@ -1838,7 +1835,7 @@
         const liveThrows = currentThrowsRef.current;
         if (liveThrows.length === 0) return;
         initAudio();
-        const snap = { players: cloneDeep(players), activePlayerIndex, confirmStage: "throwing", cpuTurnPending: false };
+        const snap = { players: cloneDeep(players), activePlayerIndex, confirmStage: "throwing" };
         setTurnHistoryState((p) => [...p, snap]);
 
         if (gameMode === "countup") {
@@ -1866,10 +1863,17 @@
           const bothDone = relevantPlayers.every((p) => p.history.length >= cuRounds);
           if (bothDone) {
             // ゲーム終了: confirmStage="gameover"で以降の入力を完全遮断
-            const s0 = mp[0].accumulatedScore,
-              s1 = mp[1].accumulatedScore;
-            const isDraw = s0 === s1;
-            const w = isDraw ? mp[0] : s0 > s1 ? mp[0] : mp[1];
+            // SOLO時はrelevantPlayers([mp[0]])だけで判定・表示する（P2の初期値0が紛れ込まないように）
+            const isDraw =
+              playerCount === 1
+                ? false
+                : mp[0].accumulatedScore === mp[1].accumulatedScore;
+            const w =
+              playerCount === 1
+                ? mp[0]
+                : isDraw || mp[0].accumulatedScore > mp[1].accumulatedScore
+                  ? mp[0]
+                  : mp[1];
             setConfirmStage("gameover");
             setCurrentThrowsImmediate([]);
             setEditingThrowIndex(null);
@@ -1878,7 +1882,7 @@
               ...w,
               countUpResult: true,
               isDraw,
-              scores: mp.map((p) => ({
+              scores: relevantPlayers.map((p) => ({
                 name: p.name,
                 score: p.accumulatedScore,
               })),
@@ -1983,7 +1987,6 @@
         setCpuDifficulty(safeDiff);
         const safeLang = ["ja","en"].includes(d.helpLang) ? d.helpLang : "ja";
         setHelpLang(safeLang);
-        setCpuTurnPending(false);
         setUndoConfirmStage("idle");
         if (d.players && d.players[0] && d.players[1]) {
           setP1StartScore(d.players[0].initialScore);
