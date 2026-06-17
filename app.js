@@ -2937,7 +2937,7 @@
                 /* プレイヤー数 (Count-Up: SOLO/1P/2P、01: 1P/2P) */
                 React.createElement("div", { className: "grid grid-cols-3 gap-1.5" },
                   (gameMode === "countup"
-                    ? [[1,"🎯 SOLO"],[2,"👥 VS"]]
+                    ? [[1,"👤 1P"],[2,"👥 2P"]]   // ← ここをSOLO/VS → 1P/2Pに変更
                     : [[1,"👤 1P"],[2,"👥 2P"]]
                   ).map(([n,lbl]) =>
                     React.createElement("button", {
