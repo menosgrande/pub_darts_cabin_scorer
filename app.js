@@ -1306,8 +1306,21 @@
             subtotal: getSubtotal(currentThrows),
           };
 
-    const isRoundBurst = gameMode === "01" && roundState.isBust;
-    const currentRoundSubtotal = getSubtotal(currentThrows);
+    const committedRoundNode =
+      gameMode === "01" &&
+      confirmStage === "next" &&
+      activePlayer.history.length > 0
+        ? activePlayer.history[0]
+        : null;
+    const isRoundBurst =
+      gameMode === "01" &&
+      (confirmStage === "next"
+        ? !!(committedRoundNode && committedRoundNode.isBurst)
+        : roundState.isBust);
+    const currentRoundSubtotal =
+      committedRoundNode && confirmStage === "next"
+        ? committedRoundNode.roundScore
+        : getSubtotal(currentThrows);
     // CPUが操作するのは P2(index=1) かつ throwing 中のみ（設定画面表示中は動かさない）
     // !editingThrowIndex: 編集モード中にCPUが割り込まないようにする
     const isCpuTurn = cpuMode && activePlayerIndex === 1
@@ -1349,6 +1362,18 @@
       try {
         if (gameMode === "countup") {
           return buildCountUpAssist(activePlayer, currentThrows, cuRounds);
+        }
+        if (confirmStage === "next") {
+          if (committedRoundNode && committedRoundNode.isBurst) {
+            return { text: "BUST", sub: "", color: "text-rose-500", pulse: false };
+          }
+          return buildAssistLine(
+            activePlayer.remainingScore,
+            [],
+            bullType,
+            normalizeOutMode(outMode),
+            checkoutPref,
+          );
         }
         return buildAssistLine(
           activePlayer.remainingScore,
@@ -1927,8 +1952,11 @@
         // winner確定後のNEXT押下は無視（二重チェック）
         if (winner) return;
         playSound("click");
-        // 1Pモード(countup)では activePlayerIndex は常に0のまま
-        if (playerCount !== 1 || gameMode !== "countup") {
+        // 1Pモード（01・Count-Up両方）では activePlayerIndex は常に0のまま
+        // 旧コードは `gameMode !== "countup"` も条件に含んでいたため、
+        // SOLOの01ゲームでP2(index=1)に切り替わってしまい、
+        // 2ターン目以降のスコアが見えないP2側に積まれるバグがあった。
+        if (playerCount !== 1) {
           setActivePlayerIndex(activePlayerIndex === 0 ? 1 : 0);
         }
         setCurrentThrowsImmediate([]);
@@ -2110,6 +2138,9 @@
             "button",
             {
               onClick: () => setSoundEnabled(!soundEnabled),
+              "aria-label": soundEnabled
+                ? (helpLang === "ja" ? "ミュートにする" : "Mute sound")
+                : (helpLang === "ja" ? "ミュートを解除する" : "Unmute sound"),
               className:
                 "w-7 h-7 rounded-lg bg-[#141419] border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-amber-400 hover:border-amber-500/30 transition cursor-pointer",
             },
@@ -2129,6 +2160,7 @@
             "button",
             {
               onClick: () => setShowHowTo(true),
+              "aria-label": helpLang === "ja" ? "使い方を表示" : "Show how to play",
               className:
                 "w-7 h-7 rounded-lg bg-[#141419] border border-zinc-800 flex items-center justify-center text-amber-500/80 hover:border-amber-500/30 transition cursor-pointer",
             },
