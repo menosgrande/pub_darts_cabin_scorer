@@ -5,7 +5,7 @@
   ];
   const MAX_THROWS_PER_TURN = 3;
   const COUNT_UP_ROUNDS = 8;
-  const LOCAL_STORAGE_KEY = "pub_darts_cabin_state_v4";
+  const LOCAL_STORAGE_KEY = "pub_darts_cabin_state_v5";
 
   // ─────────────────────────────────────────────────────────────────────────
   // ARRANGE_TABLE: 2～170点の標準チェックアウトルート
@@ -266,11 +266,11 @@
     const r = Math.sqrt(x * x + y * y);
     const rBullseye = 8.5,
       rOuterBull = 22,
-      rTripleInner = 90,
-      rTripleOuter = 112,
-      rDoubleInner = 154,
-      rDoubleOuter = 176,
-      rOOB = 195;
+      rTripleInner = 91,
+      rTripleOuter = 111,
+      rDoubleInner = 153,
+      rDoubleOuter = 170,
+      rOOB = 188;
     // D-Bull = 50点固定。multiplier:1 にしないと getSubtotal で 100点になる
     if (r <= rBullseye)
       return { score: 50, multiplier: 1, x, y, label: "D-Bull", isBull: true };
@@ -500,6 +500,120 @@
     if ([40, 32, 24, 16, 8].includes(leave)) score += 140;
     if (leave > 170) score -= (leave - 170) * 2;
     return score;
+  };
+
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CPU ENGINE: 難易度付きCPUスロー
+  //   difficulty: "easy"|"medium"|"hard"|"pro"
+  //   pro  = ほぼ理想値（±5点のブレ）
+  //   hard = ±15点のブレ、たまにバースト狙いが外れる
+  //   medium = ±30点、ランダム要素大
+  //   easy = ±50点、1~4投分をランダムに落とす
+  // ─────────────────────────────────────────────────────────────────────────
+  const CPU_DIFFICULTY = {
+    easy:   { spread: 55, dropChance: 0.40, dropDarts: 2 },
+    medium: { spread: 35, dropChance: 0.18, dropDarts: 1 },
+    hard:   { spread: 20, dropChance: 0.08, dropDarts: 1 },
+    pro:    { spread: 8,  dropChance: 0.02, dropDarts: 0 },
+  };
+
+  const cpuComputeThrow = (remaining, gameMode, outMode, difficulty, bullType) => {
+    const cfg = CPU_DIFFICULTY[difficulty] || CPU_DIFFICULTY.medium;
+    outMode = normalizeOutMode(outMode);
+
+    // Count-Upならとにかく高得点狙い（T20が理想値）
+    const idealScore = gameMode === "countup" ? 60 : Math.min(remaining - (outMode !== "single" ? 2 : 1), 60);
+
+    // ばらつきを加算（残り点数を超えないようにガード）
+    const spread = Math.round((Math.random() * 2 - 1) * cfg.spread);
+    let pts = Math.max(1, Math.min(60, Math.min(idealScore + spread, remaining - (outMode!=="single"?2:0))));
+
+    // 01ゲーム: チェックアウト可能なら狙う
+    if (gameMode === "01" && remaining <= 170) {
+      const checkout = findCheckoutRoute(remaining, 3, bullType, outMode, "double");
+      if (checkout) {
+        // proは高確率で決める、easyは低確率
+        const hitProb = { easy:0.10, medium:0.30, hard:0.60, pro:0.82 }[difficulty] || 0.4;
+        if (Math.random() < hitProb) {
+          // チェックアウトルートの最初のショットを採用
+          const first = checkout.route.split("-")[0];
+          const isTriple = first.startsWith("T");
+          const isDouble = first.startsWith("D");
+          const isBull = first.includes("Bull");
+          const num = parseInt(first.replace(/[TDS]/,"").replace("Bull","25")) || 0;
+          return {
+            score: isBull ? 50 : num,
+            multiplier: isTriple ? 3 : isDouble ? 2 : 1,
+            label: first,
+            isBull
+          };
+        }
+      }
+    }
+
+    // 通常ショット：pts を近いウェッジ値に変換
+    let mult = 1, num = pts;
+    if (pts >= 40 && pts % 3 === 0 && pts <= 60) { mult = 3; num = pts / 3; }
+    else if (pts >= 2 && pts % 2 === 0 && pts <= 40) { mult = 2; num = pts / 2; }
+    else if (pts > 20) { mult = 3; num = 20; pts = 60; }
+    // WEDGES にない番号を最近傍に丸める
+    const nearest = WEDGES.reduce((a,b) => Math.abs(b-num)<Math.abs(a-num)?b:a, WEDGES[0]);
+    num = nearest;
+    pts = num * mult;
+
+    return {
+      score: pts === 0 ? 0 : num,
+      multiplier: pts === 0 ? 0 : mult,
+      label: pts === 0 ? "MISS" : `${mult===3?"T":mult===2?"D":"S"}${num}`,
+      isBull: false
+    };
+  };
+
+  // CPU がターン分（3投）計算して返す
+  const cpuPlayTurn = (remaining, gameMode, outMode, difficulty, bullType) => {
+    const cfg = CPU_DIFFICULTY[difficulty] || CPU_DIFFICULTY.medium;
+    outMode = normalizeOutMode(outMode);
+    const throws = [];
+    let cur = remaining;
+
+    for (let i = 0; i < 3; i++) {
+      // ドロップ（投げ損ない）判定
+      if (Math.random() < cfg.dropChance && i >= (3 - cfg.dropDarts)) break;
+
+      const t = cpuComputeThrow(cur, gameMode, outMode, difficulty, bullType);
+      const pts = t.score * t.multiplier;
+
+      // バースト判定
+      if (gameMode === "01") {
+        if (cur - pts < 0) break;
+        if (cur - pts === 1 && outMode !== "single") break;
+      }
+
+      // 座標を近似
+      let rx = 0, ry = 0;
+      if (t.multiplier === 0) {
+        const d = 188, a = Math.random() * Math.PI * 2;
+        rx = Math.round(d * Math.cos(a)); ry = Math.round(d * Math.sin(a));
+      } else if (t.isBull) {
+        const d = 4, a = Math.random() * Math.PI * 2;
+        rx = Math.round(d * Math.cos(a)); ry = Math.round(d * Math.sin(a));
+      } else {
+        const d = t.multiplier === 3 ? 101 : t.multiplier === 2 ? 165 : 133;
+        const idx = WEDGES.indexOf(t.score);
+        const a = (idx * 18 - 90) * Math.PI / 180;
+        rx = Math.round(d * Math.cos(a)); ry = Math.round(d * Math.sin(a));
+      }
+
+      throws.push({ ...t, x: rx, y: ry });
+      cur -= pts;
+      // 0点（チェックアウト）または1点残り（ダブルアウト不可）で即終了
+      if (cur <= 0) break;
+      if (cur === 1 && outMode !== "single") break;
+      // 安全策: 3投を超えた場合は強制終了（防衛コード）
+      if (throws.length >= 3) break;
+    }
+    return throws.slice(0, 3); // 絶対に3投を超えない
   };
 
   const findHighScorePlan = (
@@ -952,6 +1066,7 @@
     alignment,
     label,
     gameMode,
+    isCpuPending,
   }) =>
     React.createElement(
       "div",
@@ -965,7 +1080,15 @@
         React.createElement(
           "div",
           { className: "mb-1.5 px-0.5" },
-          isActive
+          isCpuPending
+            ? React.createElement(
+                "div",
+                { className: "active-player-banner", style: { borderColor: "rgba(99,102,241,0.5)", background: "rgba(99,102,241,0.08)" } },
+                React.createElement("span", { className: "dot", style: { background: "#818cf8" } }),
+                React.createElement("span", { className: "truncate text-indigo-300" }, player.name),
+                React.createElement("span", { className: "text-indigo-400/70 text-[7px] font-bold shrink-0 animate-pulse" }, "THINKING..."),
+              )
+            : isActive
             ? React.createElement(
                 "div",
                 { className: "active-player-banner" },
@@ -1091,14 +1214,18 @@
   // ─────────────────────────────────────────────────────────────────────────
   function App() {
     // ── ゲーム設定 ──
-    const [gameMode, setGameMode] = useState("01"); // "01" | "countup"
-    const [playerCount, setPlayerCount] = useState(2); // 1 or 2
+    const [gameMode, setGameMode] = useState("01");       // "01" | "countup"
+    const [playerCount, setPlayerCount] = useState(2);    // 1 | 2
+    const [cpuMode, setCpuMode] = useState(false);        // CPU対戦ON/OFF
+    const [cpuDifficulty, setCpuDifficulty] = useState("medium"); // easy|medium|hard|pro
+    const [cpuTurnPending, setCpuTurnPending] = useState(false);  // CPU投擲待ち
+    const [helpLang, setHelpLang] = useState("ja");       // "ja" | "en"
     const [p1StartScore, setP1StartScore] = useState(501);
     const [p2StartScore, setP2StartScore] = useState(501);
     const [outMode, setOutMode] = useState("single");
-    const [checkoutPref, setCheckoutPref] = useState("double"); // double|triple|single
+    const [checkoutPref, setCheckoutPref] = useState("double");
     const [bullType, setBullType] = useState("separate");
-    const [cuRounds, setCuRounds] = useState(COUNT_UP_ROUNDS); // Count-Up ラウンド数
+    const [cuRounds, setCuRounds] = useState(COUNT_UP_ROUNDS);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [showHowTo, setShowHowTo] = useState(false);
     const [showSettingsSetup, setShowSettingsSetup] = useState(true);
@@ -1133,7 +1260,29 @@
     const [undoConfirmStage, setUndoConfirmStage] = useState("idle");
     const boardRef = useRef(null);
     const currentThrowsRef = useRef([]);
+    const winnerRef = useRef(null);
+    // 最新stateをrefで追跡 → useEffect内のクロージャが古い値を掴む問題を防ぐ
+    const playersRef = useRef(players);
+    const activePlayerIndexRef = useRef(0);
+    const gameModeRef = useRef("01");
+    const outModeRef = useRef("single");
+    const bullTypeRef = useRef("separate");
+    const cuRoundsRef = useRef(COUNT_UP_ROUNDS);
+    const cpuDifficultyRef = useRef("medium");
+    const playerCountRef = useRef(2);
+
     const activePlayer = players[activePlayerIndex];
+
+    // 常に最新値をrefに同期
+    playersRef.current = players;
+    activePlayerIndexRef.current = activePlayerIndex;
+    gameModeRef.current = gameMode;
+    outModeRef.current = outMode;
+    bullTypeRef.current = bullType;
+    cuRoundsRef.current = cuRounds;
+    cpuDifficultyRef.current = cpuDifficulty;
+    playerCountRef.current = playerCount;
+    winnerRef.current = winner; // winner の最新値をrefに同期
 
     const setCurrentThrowsImmediate = (nextThrows) => {
       currentThrowsRef.current = nextThrows;
@@ -1160,6 +1309,12 @@
 
     const isRoundBurst = gameMode === "01" && roundState.isBust;
     const currentRoundSubtotal = getSubtotal(currentThrows);
+    // CPUが操作するのは P2(index=1) かつ throwing 中のみ（設定画面表示中は動かさない）
+    // !cpuTurnPending: CPU投擲アニメ中の二重発火を防ぐ
+    // !editingThrowIndex: 編集モード中にCPUが割り込まないようにする
+    const isCpuTurn = cpuMode && activePlayerIndex === 1
+      && confirmStage === "throwing" && !winner && !showSettingsSetup
+      && editingThrowIndex === null && !cpuTurnPending;
 
     // Count-Up用表示スコア
     const cuDisplayScore = (pi) => {
@@ -1192,6 +1347,7 @@
 
     // ── アシストバー（インライン計算 - useMemo廃止で常に最新値）──
     const assistInfo = (() => {
+      if (isCpuTurn) return { text: "CPU THINKING...", sub: "", color: "text-indigo-400", pulse: true };
       try {
         if (gameMode === "countup") {
           return buildCountUpAssist(activePlayer, currentThrows, cuRounds);
@@ -1212,6 +1368,72 @@
     const isCountUpFinished =
       gameMode === "countup" &&
       players.every((p) => p.history.length >= cuRounds);
+
+    // ── CPU自動投擲 ──
+    // 設計: タイマー1本、全stateをRefで読む、cancelledフラグで確実クリーンアップ
+    const cpuCommitRef = useRef(null);
+    useEffect(() => {
+      if (!isCpuTurn) return;
+      let cancelled = false;
+      const totalDelay = 900 + Math.random() * 700;
+      const tid = setTimeout(() => {
+        if (cancelled) return;
+        const p = playersRef.current;
+        const idx = activePlayerIndexRef.current;
+        const pl = p[idx];
+        const gm = gameModeRef.current;
+        const om = normalizeOutMode(outModeRef.current);
+        const bt = bullTypeRef.current;
+        const diff = cpuDifficultyRef.current;
+        const cu = cuRoundsRef.current;
+        const pc = playerCountRef.current;
+        const remaining = gm === "countup" ? 9999 : pl.remainingScore;
+        const cpuThrows = cpuPlayTurn(remaining, gm, om, diff, bt);
+        // キャンセル・投擲ゼロ・ゲーム終了チェック（state更新前に必ず確認）
+        if (cancelled || cpuThrows.length === 0) return;
+        // winnerRef で最新のwinner状態を確認（stateクロージャ問題を回避）
+        if (winnerRef.current) return;
+        const snap = { players: cloneDeep(p), activePlayerIndex: idx, confirmStage: "throwing", cpuTurnPending: false };
+        setCurrentThrowsImmediate(cpuThrows);
+        if (cancelled) { setCurrentThrowsImmediate([]); return; }
+        setTurnHistoryState(prev => [...prev, snap]);
+        if (gm === "countup") {
+          const pts = getSubtotal(cpuThrows);
+          const node = { roundNum: pl.history.length + 1, throws: cpuThrows, roundScore: pts };
+          const mp = p.map((pp, i) => i === idx
+            ? { ...pp, accumulatedScore: pp.accumulatedScore + pts, history: [node, ...pp.history] } : pp);
+          setPlayers(mp);
+          const rel = pc === 1 ? [mp[0]] : mp;
+          if (rel.every(pp => pp.history.length >= cu)) {
+            const s0 = mp[0].accumulatedScore, s1 = mp[1].accumulatedScore;
+            const isDraw = s0 === s1;
+            const w = isDraw ? mp[0] : s0 > s1 ? mp[0] : mp[1];
+            setConfirmStage("gameover"); setCurrentThrowsImmediate([]);
+            playSound("victory");
+            setWinner({ ...w, countUpResult: true, isDraw, scores: mp.map(pp => ({ name: pp.name, score: pp.accumulatedScore })) });
+          } else {
+            playSound("click"); setCurrentThrowsImmediate([]); setActivePlayerIndex(0); setConfirmStage("throwing");
+          }
+        } else {
+          const freshState = getRoundState(pl.remainingScore, cpuThrows, om);
+          const nextRem = freshState.remainingScore;
+          const node = { roundNum: pl.history.length + 1, throws: cpuThrows, roundScore: freshState.subtotal, remainingScore: nextRem, isBurst: freshState.isBust };
+          const mp = p.map((pp, i) => i === idx ? { ...pp, remainingScore: nextRem, history: [node, ...pp.history] } : pp);
+          setPlayers(mp);
+          if (nextRem === 0) {
+            setConfirmStage("gameover"); playSound("victory"); setWinner(mp[idx]);
+          } else {
+            playSound("click"); setCurrentThrowsImmediate([]); setActivePlayerIndex(0); setConfirmStage("throwing");
+          }
+        }
+      }, totalDelay);
+      cpuCommitRef.current = () => { cancelled = true; clearTimeout(tid); };
+      return () => {
+        cancelled = true;
+        clearTimeout(tid);
+        cpuCommitRef.current = null;
+      };
+    }, [isCpuTurn]);
 
     // ── LocalStorage 自動保存 ──
     useEffect(() => {
@@ -1239,6 +1461,9 @@
               checkoutPref,
               cuRounds,
               playerCount,
+              cpuMode,
+              cpuDifficulty,
+              helpLang,
               savedAt: Date.now(),
             }),
           );
@@ -1400,15 +1625,20 @@
 
     // ── ゲーム開始 ──
     const handleStartGame = () => {
+      cancelCpuTimer();
       playSound("revert");
       try {
         localStorage.removeItem(LOCAL_STORAGE_KEY);
       } catch (e) {}
-      const p2Name = playerCount === 1 ? "__CPU__" : (players[1].name.trim() || "PLAYER 2");
+      const p2IsHuman = !cpuMode && playerCount >= 2;
+      const cpuLabel = `CPU (${cpuDifficulty.toUpperCase()})`;
+      const p2Name = cpuMode ? cpuLabel : (playerCount === 1 ? "---" : (players[1].name.trim() || "PLAYER 2"));
       setPlayers([
         makePlayer("p1", players[0].name.trim() || "PLAYER 1", p1StartScore),
         makePlayer("p2", p2Name, p2StartScore),
       ]);
+      setCpuTurnPending(false);
+      winnerRef.current = null; // winnerRefを即時リセット（CPUuseEffect誤発火防止）
       setActivePlayerIndex(0);
       setCurrentThrowsImmediate([]);
       setEditingThrowIndex(null);
@@ -1424,7 +1654,7 @@
 
     // ── キーパッドタップ ──
     const handleKeypadTap = (score, specifiedMult, isBullType) => {
-      if (winner || confirmStage === "next" || confirmStage === "gameover")
+      if (winner || confirmStage === "next" || confirmStage === "gameover" || isCpuTurn)
         return;
       if (editingThrowIndex === null && !canAddMoreThrows) return;
       initAudio();
@@ -1494,7 +1724,7 @@
 
     // ── ボードクリック ──
     const handleBoardClick = (e) => {
-      if (winner || confirmStage === "next" || confirmStage === "gameover")
+      if (winner || confirmStage === "next" || confirmStage === "gameover" || isCpuTurn)
         return;
       if (editingThrowIndex === null && !canAddMoreThrows) return;
       if (!boardRef.current) return;
@@ -1536,32 +1766,39 @@
         playSound("burst");
     };
 
+    const cancelCpuTimer = () => {
+      if (cpuCommitRef.current) { cpuCommitRef.current(); cpuCommitRef.current = null; }
+    };
+
     const handleUndoSingleDart = () => {
-      // "next"(OK押し後) / "gameover" 中は単ダーツUNDO禁止
-      // → スコア確定後に投げを遡って点数を書き換えられるのを防ぐ
-      if (confirmStage === "next" || confirmStage === "gameover") return;
+      if (confirmStage === "next" || confirmStage === "gameover" || isCpuTurn) return;
       if (currentThrows.length === 0) return;
       playSound("revert");
+      setCpuTurnPending(false);
       setCurrentThrowsImmediate(currentThrows.slice(0, -1));
       setEditingThrowIndex(null);
     };
 
     const handleFlushRound = () => {
       if (confirmStage === "gameover") return;
-      // CLEAR は「今のターンの currentThrows を消して throwing に戻す」だけ
-      // confirmStage==='next' でもスナップを消費しない
-      // → スナップの消費は PREV TURN (handleUndoCommittedTurn) だけが責任を持つ
+      cancelCpuTimer();
+      playSound("revert");
       if (confirmStage === "next") {
-        // next 中の CLEAR = ターン確定を取り消して throwing に戻るだけ
-        // players はまだスナップで復元しない（PREV TURN の役割）
-        playSound("revert");
+        // OK押し後のCLEAR = ターン確定を完全取り消し
+        // スナップからplayers・activePlayerIndexを戻す（スナップは消費する）
+        if (turnHistoryState.length > 0) {
+          const prev = turnHistoryState[turnHistoryState.length - 1];
+          setPlayers(prev.players);
+          setActivePlayerIndex(prev.activePlayerIndex);
+          setCpuTurnPending(prev.cpuTurnPending !== undefined ? prev.cpuTurnPending : false);
+          setTurnHistoryState(turnHistoryState.slice(0, -1));
+        }
         setCurrentThrowsImmediate([]);
         setEditingThrowIndex(null);
         setConfirmStage("throwing");
         setUndoConfirmStage("idle");
         return;
       }
-      playSound("revert");
       setCurrentThrowsImmediate([]);
       setEditingThrowIndex(null);
       setConfirmStage("throwing");
@@ -1569,6 +1806,7 @@
     };
 
     const handleUndoCommittedTurn = () => {
+      cancelCpuTimer();
       if (turnHistoryState.length === 0) return;
       // confirmStage==='next'(OK押し後)なら確認なしで即復元
       // confirmStage==='throwing' なら2段階確認（誤タップ防止）
@@ -1581,6 +1819,7 @@
       const prev = turnHistoryState[turnHistoryState.length - 1];
       setPlayers(prev.players);
       setActivePlayerIndex(prev.activePlayerIndex);
+      setCpuTurnPending(prev.cpuTurnPending !== undefined ? prev.cpuTurnPending : false);
       setCurrentThrowsImmediate([]);
       setEditingThrowIndex(null);
       setWinner(null);
@@ -1599,7 +1838,7 @@
         const liveThrows = currentThrowsRef.current;
         if (liveThrows.length === 0) return;
         initAudio();
-        const snap = { players: cloneDeep(players), activePlayerIndex };
+        const snap = { players: cloneDeep(players), activePlayerIndex, confirmStage: "throwing", cpuTurnPending: false };
         setTurnHistoryState((p) => [...p, snap]);
 
         if (gameMode === "countup") {
@@ -1622,7 +1861,9 @@
           setPlayers(mp);
 
           // setPlayers後のmpで終了判定（Reactのstate更新は非同期なのでmpを直接使う）
-          const bothDone = mp.every((p) => p.history.length >= cuRounds);
+          // 1P時はP1(index=0)だけが全ラウンド終了で終了
+          const relevantPlayers = (playerCount === 1) ? [mp[0]] : mp;
+          const bothDone = relevantPlayers.every((p) => p.history.length >= cuRounds);
           if (bothDone) {
             // ゲーム終了: confirmStage="gameover"で以降の入力を完全遮断
             const s0 = mp[0].accumulatedScore,
@@ -1737,9 +1978,21 @@
         setCheckoutPref(d.checkoutPref || "double");
         setCuRounds(d.cuRounds || COUNT_UP_ROUNDS);
         setPlayerCount(d.playerCount || 2);
+        setCpuMode(!!d.cpuMode);
+        const safeDiff = ["easy","medium","hard","pro"].includes(d.cpuDifficulty) ? d.cpuDifficulty : "medium";
+        setCpuDifficulty(safeDiff);
+        const safeLang = ["ja","en"].includes(d.helpLang) ? d.helpLang : "ja";
+        setHelpLang(safeLang);
+        setCpuTurnPending(false);
+        setUndoConfirmStage("idle");
         if (d.players && d.players[0] && d.players[1]) {
           setP1StartScore(d.players[0].initialScore);
           setP2StartScore(d.players[1].initialScore);
+        }
+        // 復帰時はP1ターン（index=0）から再開する。
+        // CPUモード時に復帰直後にCPUが発火しないよう activePlayerIndex=0 を優先。
+        if (!!d.cpuMode && restoredIndex === 1) {
+          setActivePlayerIndex(0);
         }
         setShowSettingsSetup(false);
         return true;
@@ -2168,7 +2421,7 @@
               /* Corner buttons removed - using action bar below */
             ),
 
-            playerCount !== 1 && React.createElement(
+            (playerCount >= 2 || cpuMode) && React.createElement(
               "div",
               { className: "w-[28%] flex flex-col justify-center shrink-0" },
               React.createElement(PlayerCockpit, {
@@ -2177,8 +2430,9 @@
                 isActive: activePlayerIndex === 1,
                 isBust: isRoundBurst && activePlayerIndex === 1,
                 alignment: "right",
-                label: "P2 HIST",
+                label: cpuMode ? "CPU" : "P2 HIST",
                 gameMode,
+                isCpuPending: cpuMode && isCpuTurn,
               }),
             ),
           ),
@@ -2641,266 +2895,127 @@
                 ),
               ),
 
-              /* ── PLAYERS ── */
-              React.createElement(
-                "div",
-                { className: "space-y-2" },
-                React.createElement(
-                  "p",
-                  { className: "setup-section-label" },
-                  "PLAYERS",
+              /* ── PLAYERS & OPPONENT ── */
+              React.createElement("div", { className: "space-y-3" },
+                React.createElement("p", { className: "setup-section-label" }, "PLAYERS"),
+
+                /* プレイヤー数 (Count-Up: SOLO/1P/2P、01: 1P/2P) */
+                React.createElement("div", { className: "grid grid-cols-3 gap-1.5" },
+                  (gameMode === "countup"
+                    ? [[1,"🎯 SOLO"],[2,"👥 VS"]]
+                    : [[1,"👤 1P"],[2,"👥 2P"]]
+                  ).map(([n,lbl]) =>
+                    React.createElement("button", {
+                      key: n,
+                      onClick: () => { playSound("click"); setPlayerCount(n); if(n===1) setCpuMode(false); },
+                      className: `setup-toggle-btn py-2.5 ${playerCount === n && !cpuMode ? "setup-toggle-active" : "setup-toggle-inactive"}`,
+                    }, lbl)
+                  ),
+                  React.createElement("button", {
+                    onClick: () => { playSound("click"); setCpuMode(c=>!c); if(!cpuMode) setPlayerCount(2); },
+                    className: `setup-toggle-btn py-2.5 ${cpuMode ? "setup-toggle-active" : "setup-toggle-inactive"}`,
+                  }, "🤖 CPU"),
                 ),
-                React.createElement(
-                  "div",
-                  { className: "grid grid-cols-2 gap-2.5" },
-                  [0, 1].map((i) =>
-                    React.createElement(
-                      "div",
-                      {
-                        key: i,
-                        className:
-                          "bg-zinc-950/80 border border-zinc-800/70 rounded-2xl p-3 space-y-3",
-                      },
+
+                /* 名前入力（P2はCPUのとき非表示） */
+                React.createElement("div", { className: `grid gap-2 ${(!cpuMode && playerCount>=2) ? "grid-cols-2" : "grid-cols-1"}` },
+                  [0, 1].filter(i => i===0 || (!cpuMode && playerCount>=2)).map(i =>
+                    React.createElement("div", { key: i, className: "bg-zinc-950/80 border border-zinc-800/70 rounded-xl p-2 space-y-2" },
                       React.createElement("input", {
-                        type: "text",
-                        maxLength: 10,
+                        type: "text", maxLength: 10,
                         value: players[i].name,
-                        onChange: (e) => {
-                          const u = [...players];
-                          u[i] = {
-                            ...u[i],
-                            name: e.target.value.toUpperCase(),
-                          };
-                          setPlayers(u);
-                        },
-                        className:
-                          "w-full bg-black/60 border border-zinc-700/60 rounded-xl px-2 py-2 text-[11px] text-amber-200 outline-none uppercase font-black text-center tracking-wider focus:border-amber-500/50 transition",
-                        placeholder: `P${i + 1} NAME`,
+                        onChange: e => { const u=[...players]; u[i]={...u[i],name:e.target.value.toUpperCase()}; setPlayers(u); },
+                        className: "w-full bg-black/60 border border-zinc-700/60 rounded-lg px-2 py-2 text-sm text-amber-200 outline-none uppercase font-black text-center tracking-wider focus:border-amber-500/50 transition",
+                        placeholder: `P${i+1} NAME`,
                       }),
-                      gameMode === "01" &&
-                        React.createElement(
-                          "div",
-                          {
-                            className:
-                              "flex items-center justify-between gap-2",
-                          },
-                          React.createElement(
-                            "button",
-                            {
-                              onClick: () => {
-                                playSound("click");
-                                i === 0
-                                  ? setP1StartScore((p) => Math.max(11, p - 10))
-                                  : setP2StartScore((p) =>
-                                      Math.max(11, p - 10),
-                                    );
-                              },
-                              className: "setup-score-btn flex-1",
-                            },
-                            "－",
-                          ),
-                          React.createElement(
-                            "span",
-                            {
-                              className:
-                                "text-xl font-black font-mono text-white tabular-nums w-12 text-center",
-                            },
-                            i === 0 ? p1StartScore : p2StartScore,
-                          ),
-                          React.createElement(
-                            "button",
-                            {
-                              onClick: () => {
-                                playSound("click");
-                                i === 0
-                                  ? setP1StartScore((p) =>
-                                      Math.min(999, p + 10),
-                                    )
-                                  : setP2StartScore((p) =>
-                                      Math.min(999, p + 10),
-                                    );
-                              },
-                              className: "setup-score-btn flex-1",
-                            },
-                            "＋",
-                          ),
-                        ),
+                      gameMode === "01" && React.createElement("div", { className: "flex items-center justify-between gap-1.5" },
+                        React.createElement("button", {
+                          onClick: () => { playSound("click"); i===0 ? setP1StartScore(p=>Math.max(11,p-10)) : setP2StartScore(p=>Math.max(11,p-10)); },
+                          className: "setup-score-btn flex-1",
+                        }, "－"),
+                        React.createElement("span", { className: "text-lg font-black font-mono text-white tabular-nums w-12 text-center" },
+                          i===0 ? p1StartScore : p2StartScore),
+                        React.createElement("button", {
+                          onClick: () => { playSound("click"); i===0 ? setP1StartScore(p=>Math.min(999,p+10)) : setP2StartScore(p=>Math.min(999,p+10)); },
+                          className: "setup-score-btn flex-1",
+                        }, "＋"),
+                      ),
+                    )
+                  ),
+                ),
+
+                /* CPU難易度 */
+                cpuMode && React.createElement("div", { className: "space-y-1.5" },
+                  React.createElement("p", { className: "setup-section-label" }, "CPU DIFFICULTY"),
+                  React.createElement("div", { className: "grid grid-cols-4 gap-1.5" },
+                    [["easy","EASY"],["medium","MED"],["hard","HARD"],["pro","PRO"]].map(([d,lbl]) =>
+                      React.createElement("button", {
+                        key: d,
+                        onClick: () => { playSound("click"); setCpuDifficulty(d); },
+                        className: `setup-toggle-btn py-2 ${cpuDifficulty===d?"setup-toggle-active":"setup-toggle-inactive"}`,
+                      }, lbl)
                     ),
                   ),
                 ),
               ),
 
               /* ── 01専用: Quick Preset ── */
-              gameMode === "01" &&
-                React.createElement(
-                  "div",
-                  { className: "space-y-2" },
-                  React.createElement(
-                    "p",
-                    { className: "setup-section-label" },
-                    "QUICK PRESET",
-                  ),
-                  React.createElement(
-                    "div",
-                    { className: "grid grid-cols-3 gap-2" },
-                    [301, 501, 701].map((s) =>
-                      React.createElement(
-                        "button",
-                        {
-                          key: s,
-                          onClick: () => {
-                            playSound("click");
-                            setP1StartScore(s);
-                            setP2StartScore(s);
-                          },
-                          className: `setup-toggle-btn ${p1StartScore === s && p2StartScore === s ? "setup-toggle-active" : "setup-toggle-inactive"}`,
-                        },
-                        s,
-                      ),
-                    ),
+              gameMode === "01" && React.createElement("div", { className: "space-y-1.5" },
+                React.createElement("p", { className: "setup-section-label" }, "PRESET"),
+                React.createElement("div", { className: "grid grid-cols-3 gap-2" },
+                  [301, 501, 701].map(s =>
+                    React.createElement("button", {
+                      key: s,
+                      onClick: () => { playSound("click"); setP1StartScore(s); setP2StartScore(s); },
+                      className: `setup-toggle-btn ${p1StartScore===s&&p2StartScore===s?"setup-toggle-active":"setup-toggle-inactive"}`,
+                    }, s)
                   ),
                 ),
-
-              /* ── Count-Up専用: プレイヤー数 ── */
-              gameMode === "countup" &&
-                React.createElement(
-                  "div",
-                  { className: "space-y-2" },
-                  React.createElement("p", { className: "setup-section-label" }, "PLAYERS"),
-                  React.createElement(
-                    "div",
-                    { className: "grid grid-cols-2 gap-2" },
-                    [[1,"SOLO","👤"],[2,"VS","👥"]].map(([n,lbl,ico]) =>
-                      React.createElement("button", {
-                        key: n,
-                        onClick: () => { playSound("click"); setPlayerCount(n); },
-                        className: `setup-toggle-btn flex items-center justify-center gap-1.5 py-3 ${playerCount === n ? "setup-toggle-active" : "setup-toggle-inactive"}`,
-                      },
-                      React.createElement("span", null, ico),
-                      React.createElement("span", null, lbl),
-                      )
-                    ),
-                  ),
-                ),
+              ),
 
               /* ── Count-Up専用: ラウンド数 ── */
-              gameMode === "countup" &&
-                React.createElement(
-                  "div",
-                  { className: "space-y-2" },
-                  React.createElement(
-                    "p",
-                    { className: "setup-section-label" },
-                    "ROUNDS",
-                  ),
-                  React.createElement(
-                    "div",
-                    { className: "grid grid-cols-4 gap-2" },
-                    [5, 8, 10, 15].map((r) =>
-                      React.createElement(
-                        "button",
-                        {
-                          key: r,
-                          onClick: () => {
-                            playSound("click");
-                            setCuRounds(r);
-                          },
-                          className: `setup-toggle-btn ${cuRounds === r ? "setup-toggle-active" : "setup-toggle-inactive"}`,
-                        },
-                        r,
-                      ),
-                    ),
+              gameMode === "countup" && React.createElement("div", { className: "space-y-1.5" },
+                React.createElement("p", { className: "setup-section-label" }, "ROUNDS"),
+                React.createElement("div", { className: "grid grid-cols-4 gap-2" },
+                  [5,8,10,15].map(r =>
+                    React.createElement("button", {
+                      key: r,
+                      onClick: () => { playSound("click"); setCuRounds(r); },
+                      className: `setup-toggle-btn ${cuRounds===r?"setup-toggle-active":"setup-toggle-inactive"}`,
+                    }, r)
                   ),
                 ),
+              ),
 
-              /* ── RULES (01のみ) ── */
-              gameMode === "01" &&
-                React.createElement(
-                  "div",
-                  { className: "space-y-3" },
-                  React.createElement(
-                    "p",
-                    { className: "setup-section-label" },
-                    "RULES",
+              /* ── RULES (共通 + 01のみOUT) ── */
+              React.createElement("div", { className: "space-y-2" },
+                React.createElement("p", { className: "setup-section-label" }, "RULES"),
+                /* BULL */
+                React.createElement("div", { className: "flex items-center gap-3" },
+                  React.createElement("span", { className: "text-[9px] text-zinc-600 font-bold w-8 shrink-0" }, "BULL"),
+                  React.createElement("div", {
+                    className: "flex-1 slide-track",
+                    onClick: () => { playSound("click"); setBullType(b=>b==="separate"?"fat":"separate"); },
+                  },
+                    React.createElement("div", { className: `slide-thumb ${bullType==="separate"?"left":"right"}` }),
+                    React.createElement("button", { className: `slide-opt ${bullType==="separate"?"active":"inactive"}` }, "25/50"),
+                    React.createElement("button", { className: `slide-opt ${bullType==="fat"?"active":"inactive"}` }, "50/50"),
                   ),
-                  /* BULL */
-                  React.createElement(
-                    "div",
-                    { className: "flex items-center gap-3" },
-                    React.createElement(
-                      "span",
-                      {
-                        className:
-                          "text-[9px] text-zinc-600 font-bold w-8 shrink-0",
-                      },
-                      "BULL",
-                    ),
-                    React.createElement(
-                      "div",
-                      {
-                        className: "flex-1 slide-track",
-                        onClick: () => {
-                          playSound("click");
-                          setBullType((b) =>
-                            b === "separate" ? "fat" : "separate",
-                          );
-                        },
-                      },
-                      React.createElement("div", {
-                        className: `slide-thumb ${bullType === "separate" ? "left" : "right"}`,
-                      }),
-                      React.createElement(
-                        "button",
-                        {
-                          className: `slide-opt ${bullType === "separate" ? "active" : "inactive"}`,
-                        },
-                        "25 / 50",
-                      ),
-                      React.createElement(
-                        "button",
-                        {
-                          className: `slide-opt ${bullType === "fat" ? "active" : "inactive"}`,
-                        },
-                        "50 / 50",
-                      ),
-                    ),
-                  ),
-                  /* OUT */
-                  React.createElement(
-                    "div",
-                    { className: "flex items-center gap-3" },
-                    React.createElement(
-                      "span",
-                      {
-                        className:
-                          "text-[9px] text-zinc-600 font-bold w-8 shrink-0",
-                      },
-                      "OUT",
-                    ),
-                    React.createElement(
-                      "div",
-                      { className: "flex-1 pill-seg" },
-                      [
-                        ["single", "OPEN", "active-s"],
-                        ["double", "DOUBLE", "active-d"],
-                        ["master", "MASTER", "active-m"],
-                      ].map(([m, lbl, ac]) =>
-                        React.createElement(
-                          "button",
-                          {
-                            key: m,
-                            onClick: () => {
-                              playSound("click");
-                              setOutMode(m);
-                            },
-                            className: `pill-opt ${outMode === m ? ac : "inactive"}`,
-                          },
-                          lbl,
-                        ),
-                      ),
+                ),
+                /* OUT (01のみ) */
+                gameMode === "01" && React.createElement("div", { className: "flex items-center gap-3" },
+                  React.createElement("span", { className: "text-[9px] text-zinc-600 font-bold w-8 shrink-0" }, "OUT"),
+                  React.createElement("div", { className: "flex-1 pill-seg" },
+                    [["single","OPEN","active-s"],["double","DOUBLE","active-d"],["master","MASTER","active-m"]].map(([m,lbl,ac]) =>
+                      React.createElement("button", {
+                        key: m,
+                        onClick: () => { playSound("click"); setOutMode(m); },
+                        className: `pill-opt ${outMode===m?ac:"inactive"}`,
+                      }, lbl)
                     ),
                   ),
                 ),
+              ),
 
               /* ── Start / Confirm ── */
               showQuitConfirm
@@ -3050,104 +3165,58 @@
         ),
 
       /* ── How To ── */
-      showHowTo &&
-        React.createElement(
-          "div",
-          {
-            className:
-              "fixed inset-0 z-50 bg-black/90 backdrop-blur-md p-4 flex items-center justify-center",
+      showHowTo && (() => {
+        const isJa = helpLang === "ja";
+        const helpItems = isJa ? [
+          ["1. 入力", "盤面を直接タップするか、テンキーを使います。S/D/T でシングル・ダブル・トリプルを選んでから数字をタップ。"],
+          ["2. 編集", "3つのダーツスロットをタップすると上書き編集できます。UNDOで1投取り消し、CLEARでターン全消去。"],
+          ["3. アレンジ (01)", "上部バーに標準チェックアウトルートが表示されます。"],
+          ["4. Count-Up", "各プレイヤーが3投×Nラウンド投げて合計点を競います。"],
+          ["5. CPU対戦", "設定で🤖CPUをONにすると、AIが自動で投げます。難易度は EASY〜PRO から選べます。"],
+          ["6. PREV TURN", "PREV（戻る）ボタンで前のターンに戻れます。throwing中は2回押し確認、next中は1回で即戻り。"],
+        ] : [
+          ["1. Input", "Tap the board directly or use the keypad. Choose S/D/T (Single/Double/Triple) then tap the number."],
+          ["2. Edit", "Tap a dart slot to overwrite. UNDO removes the last dart, CLEAR wipes the whole turn."],
+          ["3. Assist (01)", "The top bar shows the standard checkout route for your remaining score."],
+          ["4. Count-Up", "Players throw 3 darts × N rounds and accumulate points. Highest total wins."],
+          ["5. CPU Match", "Enable 🤖 CPU in the setup to play against AI. Choose difficulty from EASY to PRO."],
+          ["6. PREV TURN", "PREV button undoes the previous turn. Press twice during throwing, once after OK."],
+        ];
+        return React.createElement("div", {
+          className: "fixed inset-0 z-50 bg-black/90 backdrop-blur-md p-4 flex items-center justify-center",
+        },
+          React.createElement("div", {
+            className: "setup-card max-w-sm w-full p-5 rounded-2xl space-y-4 no-scrollbar overflow-y-auto max-h-[85vh]",
           },
-          React.createElement(
-            "div",
-            {
-              className:
-                "setup-card max-w-sm w-full p-5 rounded-2xl space-y-4 no-scrollbar overflow-y-auto max-h-[85vh]",
-            },
-            React.createElement(
-              "div",
-              { className: "flex justify-between items-center" },
-              React.createElement(
-                "h3",
-                {
-                  className:
-                    "text-[10px] font-black tracking-widest text-amber-400 uppercase",
-                },
-                "QUICK HELP",
-              ),
-              React.createElement(
-                "button",
-                {
-                  onClick: () => {
-                    playSound("revert");
-                    setShowHowTo(false);
-                  },
-                  className:
-                    "w-7 h-7 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white cursor-pointer",
-                },
-                React.createElement(Icons.X, null),
+            React.createElement("div", { className: "flex justify-between items-center" },
+              React.createElement("h3", { className: "text-[10px] font-black tracking-widest text-amber-400 uppercase" },
+                isJa ? "クイックヘルプ" : "QUICK HELP"),
+              React.createElement("div", { className: "flex items-center gap-2" },
+                React.createElement("button", {
+                  onClick: () => { playSound("click"); setHelpLang(l=>l==="ja"?"en":"ja"); },
+                  className: "px-2 py-1 rounded-lg bg-zinc-800 border border-zinc-700 text-[9px] font-black text-zinc-400 hover:text-amber-400 cursor-pointer transition",
+                }, isJa ? "EN" : "JP"),
+                React.createElement("button", {
+                  onClick: () => { playSound("revert"); setShowHowTo(false); },
+                  className: "w-7 h-7 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white cursor-pointer",
+                }, React.createElement(Icons.X, null)),
               ),
             ),
-            React.createElement(
-              "div",
-              {
-                className:
-                  "text-[11px] text-zinc-300 space-y-3 leading-relaxed",
-              },
-              React.createElement(
-                "p",
-                null,
-                React.createElement(
-                  "b",
-                  { className: "text-amber-300" },
-                  "1. Input:",
-                ),
-                " Tap the board directly or use the keypad. Choose Single / Double / Triple first, then tap the target number.",
-              ),
-              React.createElement(
-                "p",
-                null,
-                React.createElement(
-                  "b",
-                  { className: "text-amber-300" },
-                  "2. Edit:",
-                ),
-                " Tap any of the 3 dart slots to overwrite that throw. UNDO and CLEAR are also available.",
-              ),
-              React.createElement(
-                "p",
-                null,
-                React.createElement(
-                  "b",
-                  { className: "text-amber-300" },
-                  "3. Assist (01):",
-                ),
-                " The top bar shows the standard checkout/setup route. Right side shows remaining score · darts left.",
-              ),
-              React.createElement(
-                "p",
-                null,
-                React.createElement(
-                  "b",
-                  { className: "text-amber-300" },
-                  "4. Count-Up:",
-                ),
-                " Each player throws 3×N rounds and accumulates points. Highest total wins.",
+            React.createElement("div", { className: "space-y-3" },
+              helpItems.map(([title, body]) =>
+                React.createElement("div", { key: title, className: "bg-zinc-900/60 rounded-xl p-3 border border-zinc-800/60" },
+                  React.createElement("p", { className: "text-[10px] font-black text-amber-300 mb-1" }, title),
+                  React.createElement("p", { className: "text-[11px] text-zinc-300 leading-relaxed" }, body),
+                )
               ),
             ),
-            React.createElement(
-              "button",
-              {
-                onClick: () => {
-                  playSound("revert");
-                  setShowHowTo(false);
-                },
-                className:
-                  "w-full py-2 bg-zinc-900 border border-zinc-800 text-zinc-500 font-bold text-[10px] rounded-xl cursor-pointer hover:text-zinc-300 transition",
-              },
-              "CLOSE",
-            ),
+            React.createElement("button", {
+              onClick: () => { playSound("revert"); setShowHowTo(false); },
+              className: "w-full py-2 bg-zinc-900 border border-zinc-800 text-zinc-500 font-bold text-[10px] rounded-xl cursor-pointer hover:text-zinc-300 transition",
+            }, isJa ? "閉じる" : "CLOSE"),
           ),
-        ),
+        );
+      })(),
 
       /* ── Winner / Count-Up Result ── */
       winner &&
@@ -3233,13 +3302,18 @@
                     }),
                   );
                 })()
-              : React.createElement(
-                  "p",
-                  {
-                    className:
-                      "text-[10px] text-zinc-500 uppercase font-bold tracking-widest",
-                  },
-                  "Perfect finish.",
+              : React.createElement("div", { className: "space-y-2" },
+                  React.createElement("p", { className: "text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-2" }, "Perfect finish."),
+                  players.filter((p,i) => !cpuMode || i<2).map((p,i) =>
+                    React.createElement("div", {
+                      key: p.id,
+                      className: `flex justify-between items-center rounded-xl px-4 py-2.5 border ${p.id === winner.id ? "bg-amber-950/40 border-amber-500/50" : "bg-zinc-900/60 border-zinc-800"}`,
+                    },
+                      React.createElement("span", { className: `text-[11px] font-black uppercase ${p.id===winner.id?"text-amber-300":"text-zinc-400"}` }, p.name),
+                      React.createElement("span", { className: `text-lg font-black font-mono ${p.id===winner.id?"text-amber-300":"text-zinc-400"}` },
+                        p.remainingScore === 0 ? "✓ OUT" : p.remainingScore)
+                    )
+                  ),
                 ),
             React.createElement(
               "button",
@@ -3266,7 +3340,10 @@
 
 setTimeout(() => {
   try {
-    const raw = localStorage.getItem("pub_darts_cabin_state_v4");
+    // v4 → v5 移行: 古いセーブが残っていれば削除
+    try { localStorage.removeItem("pub_darts_cabin_state_v4"); } catch(e) {}
+    // v5 セーブデータがあれば復帰ボタンを表示
+    const raw = localStorage.getItem("pub_darts_cabin_state_v5");
     if (raw) {
       const d = JSON.parse(raw);
       if (Date.now() - (d.savedAt || 0) < 86400000) {
