@@ -6,6 +6,7 @@
   const MAX_THROWS_PER_TURN = 3;
   const COUNT_UP_ROUNDS = 8;
   const LOCAL_STORAGE_KEY = "pub_darts_cabin_state_v5";
+  const CURRENT_SAVE_VERSION = 6; // セーブデータ構造のバージョン。上げたら migrateSaveData に変換処理を追加。
 
   // ─────────────────────────────────────────────────────────────────────────
   // ARRANGE_TABLE: 2～170点の標準チェックアウトルート
@@ -55,7 +56,7 @@
     122: "T18 - T20 - D4",
     121: "T20 - T11 - D14",
     120: "T20 - S20 - D20",
-    119: "T19 - S10 - D16",
+    119: "T19 - S12 - D-Bull",
     118: "T20 - S18 - D20",
     117: "T20 - S17 - D20",
     116: "T20 - S16 - D20",
@@ -323,13 +324,13 @@
     const impossible170 = [169, 168, 166, 165, 163, 162, 159];
     if (impossible170.includes(score)) {
       const fallback = {
-        169: "T20 - T19 - D16",
-        168: "T20 - T20 - D16",
-        166: "T20 - T18 - D16",
-        165: "T20 - T19 - D16",
-        163: "T20 - T17 - D16",
-        162: "T20 - T20 - D16",
-        159: "T19 - T20 - D11",
+        169: "T20 - T19 → 52",
+        168: "T20 - T20 → 48",
+        166: "T20 - T18 → 52",
+        165: "T20 - T19 → 48",
+        163: "T20 - T17 → 52",
+        162: "T20 - T20 → 42",
+        159: "T19 - T20 → 42",
       };
       return fallback[score];
     }
@@ -364,6 +365,17 @@
     return `T20 × 3 pace (${turns} turns)`;
   };
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // ▼▼▼ チェックアウト/スコアリング関連ロジック（CPU・人間アシスト共有） ▼▼▼
+  // 将来ファイル分割する場合の想定切り出し単位:
+  //   checkout.js   → findCheckoutRoute, getSteelDartsArrangement
+  //   scoring.js    → scoreLeaveQuality, findHighScorePlan, buildAssistLine
+  //   difficulty.js → CPU_DIFFICULTY
+  //   strategy.js   → cpuComputeThrow, cpuPlayTurn （CPU専用、人間UIは使わない）
+  // 現状は単一HTML+CDN React構成（ビルドステップなし）のため分割は保留。
+  // ビルドツール導入時にこの範囲をそのまま抜き出せるよう、
+  // 外部state/propsへの依存を増やさないこと。
+  // ═══════════════════════════════════════════════════════════════════════
   // ─────────────────────────────────────────────────────────────────────────
   // findCheckoutRoute: 動的チェックアウト探索
   //   checkoutPref: "double"|"triple"|"single"
@@ -511,11 +523,22 @@
   //   medium = ±30点、ランダム要素大
   //   easy = ±50点、1~4投分をランダムに落とす
   // ─────────────────────────────────────────────────────────────────────────
+  // CPU難易度パラメータ定義
+  //   spread          : 狙った点数に対するばらつきの最大値（±spread点）。
+  //                     大きいほど散らばる＝下手。cpuComputeThrowの通常ショットで使用。
+  //   dropChance      : 1投ごとの「投げ損ない(MISS)」発生確率（0〜1）。
+  //                     cpuPlayTurnのループ内で、対象ダーツ(i)がdropDarts範囲に入っているときのみ判定される。
+  //   dropDarts       : 1ターン3投のうち、終盤何投がdropChance判定の対象になるか。
+  //                     例: dropDarts=1 なら3投目だけが対象、dropDarts=2 なら2,3投目が対象。
+  //                     0にすると一切ドロップしない（pro想定）。
+  //   checkoutHitProb : チェックアウトルートを狙った際に成功する確率（0〜1）。
+  //                     findCheckoutRouteで有効なルートが見つかった場合のみ参照される。
+  //                     失敗時は通常ショット計算にフォールバックする。
   const CPU_DIFFICULTY = {
-    easy:   { spread: 55, dropChance: 0.40, dropDarts: 2 },
-    medium: { spread: 35, dropChance: 0.18, dropDarts: 1 },
-    hard:   { spread: 20, dropChance: 0.08, dropDarts: 1 },
-    pro:    { spread: 8,  dropChance: 0.02, dropDarts: 0 },
+    easy:   { spread: 55, dropChance: 0.40, dropDarts: 2, checkoutHitProb: 0.10 },
+    medium: { spread: 35, dropChance: 0.18, dropDarts: 1, checkoutHitProb: 0.30 },
+    hard:   { spread: 20, dropChance: 0.08, dropDarts: 1, checkoutHitProb: 0.60 },
+    pro:    { spread: 8,  dropChance: 0.02, dropDarts: 0, checkoutHitProb: 0.82 },
   };
 
   const cpuComputeThrow = (remaining, gameMode, outMode, difficulty, bullType) => {
@@ -536,17 +559,19 @@
       const checkout = findCheckoutRoute(remaining, 3, bullType, outMode, "double");
       if (checkout) {
         // proは高確率で決める、easyは低確率
-        const hitProb = { easy:0.10, medium:0.30, hard:0.60, pro:0.82 }[difficulty] || 0.4;
+        const hitProb = cfg.checkoutHitProb ?? 0.4;
         if (Math.random() < hitProb) {
           // チェックアウトルートの最初のショットを採用
           // " - " で分割して D-Bull が壊れないようにする
           const first = checkout.route.split(" - ")[0].trim();
           const isTriple = first.startsWith("T") && !first.includes("Bull");
           const isDouble = first.startsWith("D") && !first.includes("Bull");
+          const isSingleBull = first === "S-Bull" || first === "S-Bull(25)";
           const isBull = first.includes("Bull");
-          const num = isBull ? 50 : parseInt(first.replace(/^[TDS]/,"")) || 0;
+          const bullScore = isSingleBull ? 25 : 50;
+          const num = isBull ? bullScore : parseInt(first.replace(/^[TDS]/,"")) || 0;
           return {
-            score: isBull ? 50 : num,
+            score: isBull ? bullScore : num,
             multiplier: isBull ? 1 : isTriple ? 3 : isDouble ? 2 : 1,
             label: first.trim(),
             isBull
@@ -621,6 +646,7 @@
     }
     return throws.slice(0, 3); // 絶対に3投を超えない
   };
+  // ▲▲▲ チェックアウト/スコアリング/CPU関連ロジック ここまで ▲▲▲
 
   const findHighScorePlan = (
     score,
@@ -1256,6 +1282,7 @@
     const [showSettingsSetup, setShowSettingsSetup] = useState(true);
     const [showExitConfirm, setShowExitConfirm] = useState(false);
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+    const [hasRestorableSave, setHasRestorableSave] = useState(false);
 
     const audioCtxRef = useRef(null);
 
@@ -1316,6 +1343,35 @@
       setCurrentThrows(nextThrows);
     };
 
+    const clearSavedGame = () => {
+      try {
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
+      } catch (e) {}
+      setHasRestorableSave(false);
+    };
+
+    const refreshRestorableSave = () => {
+      try {
+        const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (!raw) {
+          setHasRestorableSave(false);
+          return false;
+        }
+        const d = JSON.parse(raw);
+        const ok = Date.now() - (d.savedAt || 0) < 86400000;
+        if (!ok) {
+          localStorage.removeItem(LOCAL_STORAGE_KEY);
+          setHasRestorableSave(false);
+          return false;
+        }
+        setHasRestorableSave(true);
+        return true;
+      } catch (e) {
+        setHasRestorableSave(false);
+        return false;
+      }
+    };
+
     // ── 01ゲーム用: ラウンド状態（useMemoを廃止し毎レンダーで即時計算）
     // winner確定後はroundState計算を止める（BUST等の誤表示防止）
     const roundState =
@@ -1339,7 +1395,7 @@
         ? activePlayer.history[0]
         : null;
     const isRoundBurst =
-      gameMode === "01" &&
+      gameMode === "01" && !winner &&
       (confirmStage === "next"
         ? !!(committedRoundNode && committedRoundNode.isBurst)
         : roundState.isBust);
@@ -1451,7 +1507,7 @@
           setConfirmStage("throwing");
           return;
         }
-        const snap = { players: cloneDeep(p), activePlayerIndex: idx, confirmStage: "throwing" };
+        const snap = { players: cloneDeep(p), activePlayerIndex: idx };
         setCurrentThrowsImmediate(cpuThrows);
         if (cancelled) { setCurrentThrowsImmediate([]); return; }
         setTurnHistoryState(prev => [...prev, snap].slice(-20));
@@ -1538,8 +1594,10 @@
               cpuDifficulty,
               helpLang,
               savedAt: Date.now(),
+              version: CURRENT_SAVE_VERSION,
             }),
           );
+          setHasRestorableSave(true);
         } catch (e) {}
       }
     }, [
@@ -1563,6 +1621,10 @@
       helpLang,
       showSettingsSetup,
     ]);
+
+    useEffect(() => {
+      refreshRestorableSave();
+    }, []);
 
     useEffect(() => {
       const h = (e) => {
@@ -1705,9 +1767,7 @@
     const handleStartGame = (showSetup = false) => {
       cancelCpuTimer();
       playSound("revert");
-      try {
-        localStorage.removeItem(LOCAL_STORAGE_KEY);
-      } catch (e) {}
+      clearSavedGame();
       const p2IsHuman = !cpuMode && playerCount >= 2;
       const cpuLabel = `CPU (${cpuDifficulty.toUpperCase()})`;
       const p2Name = cpuMode ? cpuLabel : (playerCount === 1 ? "---" : (players[1].name.trim() || "PLAYER 2"));
@@ -1917,7 +1977,7 @@
         const liveThrows = currentThrowsRef.current;
         if (liveThrows.length === 0) return;
         initAudio();
-        const snap = { players: cloneDeep(players), activePlayerIndex, confirmStage: "throwing" };
+        const snap = { players: cloneDeep(players), activePlayerIndex };
         setTurnHistoryState((p) => [...p, snap].slice(-20));
 
         if (gameMode === "countup") {
@@ -2034,16 +2094,55 @@
           }
     };
 
+    // ── セーブデータ migration 枠 ──
+    // version が上がるたびに、ここに旧バージョンからの変換処理を追加する。
+    // 現状は変換不要のため中身は空だが、枠を用意しておくことで
+    // 将来のフィールド追加・構造変更時に対応しやすくする。
+    //
+    // 戻り値が null の場合、呼び出し側（handleRestoreSave）は復元を拒否する。
+    const migrateSaveData = (save) => {
+      const v = save.version ?? 0;
+
+      // 未来バージョン（このアプリより新しい形式）は復元しない。
+      // 例: v7で保存したデータを、まだv6のままのアプリで開いた場合。
+      // 中身を無理に読むと構造不一致でクラッシュする可能性があるため拒否する。
+      if (v > CURRENT_SAVE_VERSION) {
+        console.warn(`セーブデータのバージョン(${v})がアプリの対応バージョン(${CURRENT_SAVE_VERSION})より新しいため復元をスキップしました。`);
+        return null;
+      }
+
+      switch (v) {
+        case 0:
+        case 1:
+        case 2:
+        case 3:
+        case 4:
+        case 5:
+          // 旧バージョン: 現状は構造変更なしなのでそのまま通す。
+          // 将来フィールド名変更やデフォルト値補完が必要になったらここに追加。
+          break;
+        default:
+          break;
+      }
+      return save;
+    };
+
     const handleRestoreSave = () => {
       try {
         const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (!raw) return false;
-        const d = JSON.parse(raw);
-        if (Date.now() - (d.savedAt || 0) > 86400000) {
-          localStorage.removeItem(LOCAL_STORAGE_KEY);
+        const parsed = JSON.parse(raw);
+        const d = migrateSaveData(parsed);
+        if (!d) {
+          // 未来バージョン等で復元拒否されたケース。データ自体は消さずに残す
+          // （ユーザーがアプリを更新すれば読めるようになる可能性があるため）。
           return false;
         }
-        const restoredMode = d.gameMode || "01";
+        if (Date.now() - (d.savedAt || 0) > 86400000) {
+          clearSavedGame();
+          return false;
+        }
+        const restoredMode = ["01", "countup"].includes(d.gameMode) ? d.gameMode : "01";
         const restoredPlayers =
           Array.isArray(d.players) && d.players.length === 2
             ? d.players
@@ -2052,7 +2151,7 @@
         const restoredThrows = Array.isArray(d.currentThrows)
           ? d.currentThrows.slice(0, MAX_THROWS_PER_TURN)
           : [];
-        const restoredOutMode = normalizeOutMode(d.outMode || "single");
+        const restoredOutMode = normalizeOutMode(d.outMode ?? "single");
         let safeStage = ["throwing", "next", "gameover"].includes(
           d.confirmStage,
         )
@@ -2066,7 +2165,7 @@
         setActivePlayerIndex(restoredIndex);
         setCurrentThrowsImmediate(restoredThrows);
         setOutMode(restoredOutMode);
-        setBullType(d.bullType || "separate");
+        setBullType(["separate", "fat"].includes(d.bullType) ? d.bullType : "separate");
         setTurnHistoryState(
           Array.isArray(d.turnHistoryState) ? d.turnHistoryState : [],
         );
@@ -2074,12 +2173,12 @@
         setConfirmStage(d.winner ? "gameover" : safeStage);
         setEditingThrowIndex(null);
         setUndoConfirmStage("idle");
-        setPadMultiplier(d.padMultiplier || 1);
-        setWinner(d.winner || null);
-        setCheckoutPref(d.checkoutPref || "double");
-        setCuRounds(d.cuRounds || COUNT_UP_ROUNDS);
-        setO1MaxRounds(d.o1MaxRounds !== undefined ? d.o1MaxRounds : null);
-        setPlayerCount(d.playerCount || 2);
+        setPadMultiplier([1, 2, 3].includes(d.padMultiplier) ? d.padMultiplier : 1);
+        setWinner(d.winner ?? null);
+        setCheckoutPref(["double", "triple", "single"].includes(d.checkoutPref) ? d.checkoutPref : "double");
+        setCuRounds(d.cuRounds ?? COUNT_UP_ROUNDS);
+        setO1MaxRounds(d.o1MaxRounds ?? null);
+        setPlayerCount(d.playerCount ?? 2);
         setCpuMode(!!d.cpuMode);
         const safeDiff = ["easy","medium","hard","pro"].includes(d.cpuDifficulty) ? d.cpuDifficulty : "medium";
         setCpuDifficulty(safeDiff);
@@ -2090,11 +2189,7 @@
           setP1StartScore(d.players[0].initialScore);
           setP2StartScore(d.players[1].initialScore);
         }
-        // 復帰時はP1ターン（index=0）から再開する。
-        // CPUモード時に復帰直後にCPUが発火しないよう activePlayerIndex=0 を優先。
-        if (!!d.cpuMode && restoredIndex === 1) {
-          setActivePlayerIndex(0);
-        }
+        setHasRestorableSave(true);
         setShowSettingsSetup(false);
         return true;
       } catch (e) {
@@ -2114,6 +2209,34 @@
         playSound("revert");
         setShowSettingsSetup(true);
       }
+    };
+
+    const handleLeaveToMenu = () => {
+      cancelCpuTimer();
+      playSound("revert");
+      clearSavedGame();
+      const cpuLabel = `CPU (${cpuDifficulty.toUpperCase()})`;
+      const p2Name = cpuMode
+        ? cpuLabel
+        : playerCount === 1
+          ? "---"
+          : players[1].name.trim() || "PLAYER 2";
+      setPlayers([
+        makePlayer("p1", players[0].name.trim() || "PLAYER 1", p1StartScore),
+        makePlayer("p2", p2Name, p2StartScore),
+      ]);
+      winnerRef.current = null;
+      setActivePlayerIndex(0);
+      setCurrentThrowsImmediate([]);
+      setEditingThrowIndex(null);
+      setPadMultiplier(1);
+      setTurnHistoryState([]);
+      setWinner(null);
+      setConfirmStage("throwing");
+      setUndoConfirmStage("idle");
+      setShowExitConfirm(false);
+      setShowQuitConfirm(false);
+      setShowSettingsSetup(true);
     };
 
     // ─────────────────────────────────────────────────────────────────────
@@ -2338,7 +2461,7 @@
                 player: players[0],
                 displayScore: p1DisplayScore,
                 isActive: activePlayerIndex === 0,
-                isBust: isRoundBurst && activePlayerIndex === 0,
+                isBust: !winner && isRoundBurst && activePlayerIndex === 0,
                 alignment: "left",
                 label: "P1 HIST",
                 gameMode,
@@ -2533,7 +2656,7 @@
                 player: players[1],
                 displayScore: p2DisplayScore,
                 isActive: activePlayerIndex === 1,
-                isBust: isRoundBurst && activePlayerIndex === 1,
+                isBust: !winner && isRoundBurst && activePlayerIndex === 1,
                 alignment: "right",
                 label: cpuMode ? "CPU" : "P2 HIST",
                 gameMode,
@@ -2551,7 +2674,7 @@
               {
                 className: "action-bar-btn ab-miss",
                 onClick: () => handleKeypadTap(0),
-                disabled: winner || confirmStage === "next" || confirmStage === "gameover" || (!canAddMoreThrows && editingThrowIndex === null),
+                disabled: winner || isCpuTurn || confirmStage === "next" || confirmStage === "gameover" || (!canAddMoreThrows && editingThrowIndex === null),
                 title: "Miss",
               },
               React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" },
@@ -3195,13 +3318,12 @@
                       },
                       "START GAME",
                     ),
-                    React.createElement(
+                    hasRestorableSave && React.createElement(
                       "button",
                       {
-                        id: "restore-btn",
                         onClick: handleRestoreSave,
                         className:
-                          "w-full py-2.5 bg-zinc-900/80 border border-amber-500/30 text-amber-500/80 font-black text-[10px] rounded-xl uppercase cursor-pointer tracking-widest hidden hover:border-amber-400/50 transition",
+                          "w-full py-2.5 bg-zinc-900/80 border border-amber-500/30 text-amber-500/80 font-black text-[10px] rounded-xl uppercase cursor-pointer tracking-widest hover:border-amber-400/50 transition",
                       },
                       "RESUME LAST GAME",
                     ),
@@ -3237,17 +3359,17 @@
                   className:
                     "text-xs font-black tracking-widest text-rose-500 uppercase",
                 },
-                "LEAVE GAME",
+                "ゲーム終了",
               ),
               React.createElement(
                 "p",
                 { className: "text-[11px] text-zinc-400 leading-relaxed" },
-                "Leave the current game and return to menu?",
+                "現在のゲームを終了してメニューに戻りますか？",
                 React.createElement("br", null),
                 React.createElement(
                   "span",
                   { className: "text-rose-500/80 font-bold" },
-                  "Turn history will be cleared.",
+                  "ターン履歴は消去されます。",
                 ),
               ),
             ),
@@ -3269,11 +3391,7 @@
               React.createElement(
                 "button",
                 {
-                  onClick: () => {
-                    playSound("revert");
-                    setShowExitConfirm(false);
-                    setShowSettingsSetup(true);
-                  },
+                  onClick: handleLeaveToMenu,
                   className:
                     "py-3 bg-rose-600 border border-rose-500 text-white text-xs font-black rounded-xl cursor-pointer",
                 },
@@ -3447,7 +3565,7 @@
                 className:
                   "w-full py-3.5 bg-gradient-to-r from-amber-400 to-amber-500 text-black font-black text-base rounded-2xl cursor-pointer hover:from-amber-300 hover:to-amber-400 shadow-[0_8px_24px_rgba(245,158,11,0.2)] tracking-[0.1em] uppercase transition",
               },
-              "PLAY AGAIN",
+              "もう一度 / PLAY AGAIN",
             ),
           ),
         ),
@@ -3457,19 +3575,3 @@
   const root = ReactDOM.createRoot(document.getElementById("root"));
   root.render(React.createElement(App, null));
 })();
-
-setTimeout(() => {
-  try {
-    // v4 → v5 移行: 古いセーブが残っていれば削除
-    try { localStorage.removeItem("pub_darts_cabin_state_v4"); } catch(e) {}
-    // v5 セーブデータがあれば復帰ボタンを表示
-    const raw = localStorage.getItem("pub_darts_cabin_state_v5");
-    if (raw) {
-      const d = JSON.parse(raw);
-      if (Date.now() - (d.savedAt || 0) < 86400000) {
-        const b = document.getElementById("restore-btn");
-        if (b) b.classList.remove("hidden");
-      }
-    }
-  } catch (e) {}
-}, 400);
