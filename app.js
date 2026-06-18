@@ -539,15 +539,16 @@
         const hitProb = { easy:0.10, medium:0.30, hard:0.60, pro:0.82 }[difficulty] || 0.4;
         if (Math.random() < hitProb) {
           // チェックアウトルートの最初のショットを採用
-          const first = checkout.route.split("-")[0];
-          const isTriple = first.startsWith("T");
-          const isDouble = first.startsWith("D");
+          // " - " で分割して D-Bull が壊れないようにする
+          const first = checkout.route.split(" - ")[0].trim();
+          const isTriple = first.startsWith("T") && !first.includes("Bull");
+          const isDouble = first.startsWith("D") && !first.includes("Bull");
           const isBull = first.includes("Bull");
-          const num = parseInt(first.replace(/[TDS]/,"").replace("Bull","25")) || 0;
+          const num = isBull ? 50 : parseInt(first.replace(/^[TDS]/,"")) || 0;
           return {
             score: isBull ? 50 : num,
-            multiplier: isTriple ? 3 : isDouble ? 2 : 1,
-            label: first,
+            multiplier: isBull ? 1 : isTriple ? 3 : isDouble ? 2 : 1,
+            label: first.trim(),
             isBull
           };
         }
@@ -586,12 +587,6 @@
       const t = cpuComputeThrow(cur, gameMode, outMode, difficulty, bullType);
       const pts = t.score * t.multiplier;
 
-      // バースト判定
-      if (gameMode === "01") {
-        if (cur - pts < 0) break;
-        if (cur - pts === 1 && outMode !== "single") break;
-      }
-
       // 座標を近似
       let rx = 0, ry = 0;
       if (t.multiplier === 0) {
@@ -605,6 +600,15 @@
         const idx = WEDGES.indexOf(t.score);
         const a = (idx * 18 - 90) * Math.PI / 180;
         rx = Math.round(d * Math.cos(a)); ry = Math.round(d * Math.sin(a));
+      }
+
+      // 01ゲームはバースト判定（人間と同様、投げてから判定）
+      if (gameMode === "01") {
+        if (cur - pts < 0 || (cur - pts === 1 && outMode !== "single")) {
+          // バースト: 投擲を記録してターン終了
+          throws.push({ ...t, x: rx, y: ry });
+          break;
+        }
       }
 
       throws.push({ ...t, x: rx, y: ry });
@@ -1230,6 +1234,11 @@
   // ─────────────────────────────────────────────────────────────────────────
   function App() {
     // ── ゲーム設定 ──
+    // ★ 新しいstateを追加するときの4点チェックリスト ★
+    // 1. useState宣言（ここ）
+    // 2. CPU useEffect内で参照する場合 → useRef宣言(~L1285) + Ref同期(~L1299)
+    // 3. localStorage保存リスト(~L1519) に追加
+    // 4. handleRestoreSave(~L2030) で復元
     const [gameMode, setGameMode] = useState("01");       // "01" | "countup"
     const [playerCount, setPlayerCount] = useState(2);    // 1 | 2
     const [cpuMode, setCpuMode] = useState(false);        // CPU対戦ON/OFF
@@ -1241,6 +1250,7 @@
     const [checkoutPref, setCheckoutPref] = useState("double");
     const [bullType, setBullType] = useState("separate");
     const [cuRounds, setCuRounds] = useState(COUNT_UP_ROUNDS);
+    const [o1MaxRounds, setO1MaxRounds] = useState(null); // null = ∞
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [showHowTo, setShowHowTo] = useState(false);
     const [showSettingsSetup, setShowSettingsSetup] = useState(true);
@@ -1285,6 +1295,7 @@
     const cuRoundsRef = useRef(COUNT_UP_ROUNDS);
     const cpuDifficultyRef = useRef("medium");
     const playerCountRef = useRef(2);
+    const o1MaxRoundsRef = useRef(null);
 
     const activePlayer = players[activePlayerIndex];
 
@@ -1297,6 +1308,7 @@
     cuRoundsRef.current = cuRounds;
     cpuDifficultyRef.current = cpuDifficulty;
     playerCountRef.current = playerCount;
+    o1MaxRoundsRef.current = o1MaxRounds;
     winnerRef.current = winner; // winner の最新値をrefに同期
 
     const setCurrentThrowsImmediate = (nextThrows) => {
@@ -1428,14 +1440,21 @@
         const pc = playerCountRef.current;
         const remaining = gm === "countup" ? 9999 : pl.remainingScore;
         const cpuThrows = cpuPlayTurn(remaining, gm, om, diff, bt);
-        // キャンセル・投擲ゼロ・ゲーム終了チェック（state更新前に必ず確認）
-        if (cancelled || cpuThrows.length === 0) return;
+        // キャンセル・ゲーム終了チェック（state更新前に必ず確認）
+        if (cancelled) return;
         // winnerRef で最新のwinner状態を確認（stateクロージャ問題を回避）
         if (winnerRef.current) return;
+        // 投擲ゼロ（全ドロップ）= スキップ扱いでP1ターンに戻す（無限ループ防止）
+        if (cpuThrows.length === 0) {
+          setCurrentThrowsImmediate([]);
+          setActivePlayerIndex(0);
+          setConfirmStage("throwing");
+          return;
+        }
         const snap = { players: cloneDeep(p), activePlayerIndex: idx, confirmStage: "throwing" };
         setCurrentThrowsImmediate(cpuThrows);
         if (cancelled) { setCurrentThrowsImmediate([]); return; }
-        setTurnHistoryState(prev => [...prev, snap]);
+        setTurnHistoryState(prev => [...prev, snap].slice(-20));
         if (gm === "countup") {
           const pts = getSubtotal(cpuThrows);
           const node = { roundNum: pl.history.length + 1, throws: cpuThrows, roundScore: pts };
@@ -1461,7 +1480,22 @@
           if (nextRem === 0) {
             setConfirmStage("gameover"); playSound("victory"); setWinner(mp[idx]);
           } else {
-            playSound("click"); setCurrentThrowsImmediate([]); setActivePlayerIndex(0); setConfirmStage("throwing");
+            // CPUターン終了後のラウンド上限チェック（winnerRefで二重ゲームオーバー防止）
+            if (winnerRef.current) return;
+            const o1Max = o1MaxRoundsRef.current;
+            const nextRoundNum = mp[idx].history.length;
+            // CPU(idx=1)は常にラストプレイヤー
+            if (o1Max !== null && nextRoundNum >= o1Max) {
+              const relevant = pc === 1 ? [mp[0]] : mp.slice(0, 2);
+              const minRem = Math.min(...relevant.map(pp => pp.remainingScore));
+              const winners = relevant.filter(pp => pp.remainingScore === minRem);
+              const isDraw = winners.length > 1;
+              const w = isDraw ? { ...winners[0], id: null } : winners[0];
+              setConfirmStage("gameover"); playSound("victory");
+              setWinner({ ...w, o1RoundResult: true, isDraw, scores: relevant.map(pp => ({ name: pp.name, score: pp.remainingScore })) });
+            } else {
+              playSound("click"); setCurrentThrowsImmediate([]); setActivePlayerIndex(0); setConfirmStage("throwing");
+            }
           }
         }
       }, totalDelay);
@@ -1498,6 +1532,7 @@
               winner,
               checkoutPref,
               cuRounds,
+              o1MaxRounds,
               playerCount,
               cpuMode,
               cpuDifficulty,
@@ -1521,6 +1556,7 @@
       winner,
       checkoutPref,
       cuRounds,
+      o1MaxRounds,
       playerCount,
       cpuMode,
       cpuDifficulty,
@@ -1666,7 +1702,7 @@
     };
 
     // ── ゲーム開始 ──
-    const handleStartGame = () => {
+    const handleStartGame = (showSetup = false) => {
       cancelCpuTimer();
       playSound("revert");
       try {
@@ -1688,7 +1724,7 @@
       setWinner(null);
       setShowQuitConfirm(false);
       setShowExitConfirm(false);
-      setShowSettingsSetup(false);
+      setShowSettingsSetup(showSetup);
       setConfirmStage("throwing");
       setUndoConfirmStage("idle");
     };
@@ -1847,6 +1883,8 @@
     const handleUndoCommittedTurn = () => {
       cancelCpuTimer();
       if (turnHistoryState.length === 0) return;
+      // gameover中（winner表示中）はPREV不可
+      if (confirmStage === "gameover") return;
       // confirmStage==='next'(OK押し後)なら確認なしで即復元
       // confirmStage==='throwing' なら2段階確認（誤タップ防止）
       if (confirmStage !== "next" && undoConfirmStage === "idle") {
@@ -1860,6 +1898,9 @@
       setActivePlayerIndex(prev.activePlayerIndex);
       setCurrentThrowsImmediate([]);
       setEditingThrowIndex(null);
+      // PRVはゲーム履歴（players/activePlayerIndex）の巻き戻しのみ担当。
+      // winner はUI状態であり履歴対象外 → 常にnullリセット。
+      // （gameover中はPREV不可なので、winner=nullで問題ない）
       setWinner(null);
       setConfirmStage("throwing");
       setUndoConfirmStage("idle");
@@ -1877,7 +1918,7 @@
         if (liveThrows.length === 0) return;
         initAudio();
         const snap = { players: cloneDeep(players), activePlayerIndex, confirmStage: "throwing" };
-        setTurnHistoryState((p) => [...p, snap]);
+        setTurnHistoryState((p) => [...p, snap].slice(-20));
 
         if (gameMode === "countup") {
           // Count-Up: 累積加算（このブロックは必ず1回だけ実行）
@@ -1960,8 +2001,23 @@
             playSound("victory");
             setWinner(mp[activePlayerIndex]);
           } else {
-            playSound("click");
-            setConfirmStage("next");
+            // ラウンド上限チェック（o1MaxRounds が設定されている場合）
+            const nextRoundNum = mp[activePlayerIndex].history.length; // 今追加したラウンド数
+            const isLastPlayer = playerCount === 1 || activePlayerIndex === (playerCount - 1);
+            if (o1MaxRounds !== null && isLastPlayer && nextRoundNum >= o1MaxRounds) {
+              // 全プレイヤーが規定ラウンドを終えた → 残り点数が少ない方が勝ち
+              const relevant = playerCount === 1 ? [mp[0]] : mp.slice(0, 2);
+              const minRem = Math.min(...relevant.map(p => p.remainingScore));
+              const winners = relevant.filter(p => p.remainingScore === minRem);
+              const isDraw = winners.length > 1;
+              const w = isDraw ? { ...winners[0], id: null } : winners[0];
+              setConfirmStage("gameover");
+              playSound("victory");
+              setWinner({ ...w, o1RoundResult: true, isDraw, scores: relevant.map(p => ({ name: p.name, score: p.remainingScore })) });
+            } else {
+              playSound("click");
+              setConfirmStage("next");
+            }
           }
         }
       } else if (confirmStage === "next") {
@@ -2022,6 +2078,7 @@
         setWinner(d.winner || null);
         setCheckoutPref(d.checkoutPref || "double");
         setCuRounds(d.cuRounds || COUNT_UP_ROUNDS);
+        setO1MaxRounds(d.o1MaxRounds !== undefined ? d.o1MaxRounds : null);
         setPlayerCount(d.playerCount || 2);
         setCpuMode(!!d.cpuMode);
         const safeDiff = ["easy","medium","hard","pro"].includes(d.cpuDifficulty) ? d.cpuDifficulty : "medium";
@@ -2048,7 +2105,7 @@
     const handleBackToMenuRequest = () => {
       if (
         players[0].history.length > 0 ||
-        players[1].history.length > 0 ||
+        (playerCount >= 2 && players[1].history.length > 0) ||
         currentThrows.length > 0
       ) {
         playSound("click");
@@ -2531,7 +2588,7 @@
               {
                 className: `action-bar-btn ab-prev${undoConfirmStage === "confirm" ? " pulsing" : ""}`,
                 onClick: handleUndoCommittedTurn,
-                disabled: turnHistoryState.length === 0,
+                disabled: turnHistoryState.length === 0 || !!winner || confirmStage === "gameover",
                 title: "Undo previous turn",
               },
               React.createElement(Icons.RotateCcw, null),
@@ -3035,6 +3092,20 @@
                 ),
               ),
 
+              /* ── 01専用: ラウンド上限 ── */
+              gameMode === "01" && React.createElement("div", { className: "space-y-1.5" },
+                React.createElement("p", { className: "setup-section-label" }, "MAX ROUNDS"),
+                React.createElement("div", { className: "grid grid-cols-4 gap-2" },
+                  [[10,"10"],[15,"15"],[20,"20"],[null,"∞"]].map(([r,lbl]) =>
+                    React.createElement("button", {
+                      key: String(r),
+                      onClick: () => { playSound("click"); setO1MaxRounds(r); },
+                      className: `setup-toggle-btn ${o1MaxRounds===r?"setup-toggle-active":"setup-toggle-inactive"}`,
+                    }, lbl)
+                  ),
+                ),
+              ),
+
               /* ── RULES (共通 + 01のみOUT) ── */
               React.createElement("div", { className: "space-y-2" },
                 React.createElement("p", { className: "setup-section-label" }, "RULES"),
@@ -3115,7 +3186,7 @@
                       {
                         onClick: () => {
                           players[0].history.length > 0 ||
-                          players[1].history.length > 0
+                          (playerCount >= 2 && players[1].history.length > 0)
                             ? setShowQuitConfirm(true)
                             : handleStartGame();
                         },
@@ -3351,15 +3422,19 @@
                   );
                 })()
               : React.createElement("div", { className: "space-y-2" },
-                  React.createElement("p", { className: "text-[10px] text-zinc-500 font-bold tracking-widest mb-2" }, "🎯 チェックアウト！"),
-                  players.filter((p,i) => !cpuMode || i<2).map((p,i) =>
+                  React.createElement("p", { className: "text-[10px] text-zinc-500 font-bold tracking-widest mb-2" },
+                    winner.o1RoundResult ? "🏁 ラウンド終了！" : "🎯 チェックアウト！"),
+                  players.filter((p,i) => i < playerCount).map((p,i) =>
                     React.createElement("div", {
                       key: p.id,
-                      className: `flex justify-between items-center rounded-xl px-4 py-2.5 border ${p.id === winner.id ? "bg-amber-950/40 border-amber-500/50" : "bg-zinc-900/60 border-zinc-800"}`,
+                      // isDraw時はid=nullなので全行をニュートラル表示、勝者はnameで判定
+                      className: `flex justify-between items-center rounded-xl px-4 py-2.5 border ${!winner.isDraw && p.id === winner.id ? "bg-amber-950/40 border-amber-500/50" : "bg-zinc-900/60 border-zinc-800"}`,
                     },
-                      React.createElement("span", { className: `text-[11px] font-black uppercase ${p.id===winner.id?"text-amber-300":"text-zinc-400"}` }, p.name),
-                      React.createElement("span", { className: `text-lg font-black font-mono ${p.id===winner.id?"text-amber-300":"text-zinc-400"}` },
-                        p.remainingScore === 0 ? "✓ OUT" : p.remainingScore)
+                      React.createElement("span", { className: `text-[11px] font-black uppercase ${!winner.isDraw && p.id===winner.id?"text-amber-300":"text-zinc-400"}` }, p.name),
+                      React.createElement("span", { className: `text-lg font-black font-mono ${!winner.isDraw && p.id===winner.id?"text-amber-300":"text-zinc-400"}` },
+                        winner.o1RoundResult
+                          ? p.remainingScore
+                          : p.remainingScore === 0 ? "✓ OUT" : p.remainingScore)
                     )
                   ),
                 ),
@@ -3367,14 +3442,7 @@
               "button",
               {
                 onClick: () => {
-                  playSound("revert");
-                  setWinner(null);
-                  setConfirmStage("throwing");
-                  setCurrentThrowsImmediate([]);
-                  setEditingThrowIndex(null);
-                  setUndoConfirmStage("idle");
-                  setCpuTurnPending(false);
-                  setShowSettingsSetup(true);
+                  handleStartGame(true);
                 },
                 className:
                   "w-full py-3.5 bg-gradient-to-r from-amber-400 to-amber-500 text-black font-black text-base rounded-2xl cursor-pointer hover:from-amber-300 hover:to-amber-400 shadow-[0_8px_24px_rgba(245,158,11,0.2)] tracking-[0.1em] uppercase transition",
