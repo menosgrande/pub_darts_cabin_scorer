@@ -523,11 +523,13 @@
     outMode = normalizeOutMode(outMode);
 
     // Count-Upならとにかく高得点狙い（T20が理想値）
-    const idealScore = gameMode === "countup" ? 60 : Math.min(remaining - (outMode !== "single" ? 2 : 1), 60);
+    const safeRemaining = Math.max(2, remaining);
+    const margin = outMode !== "single" ? 2 : 1;
+    const idealScore = gameMode === "countup" ? 60 : Math.min(safeRemaining - margin, 60);
 
-    // ばらつきを加算（残り点数を超えないようにガード）
+    // ばらつきを加算（残り点数を超えないようにガード、最小1点）
     const spread = Math.round((Math.random() * 2 - 1) * cfg.spread);
-    let pts = Math.max(1, Math.min(60, Math.min(idealScore + spread, remaining - (outMode!=="single"?2:0))));
+    let pts = Math.max(1, Math.min(60, Math.min(Math.max(1, idealScore + spread), safeRemaining - margin)));
 
     // 01ゲーム: チェックアウト可能なら狙う
     if (gameMode === "01" && remaining <= 170) {
@@ -1231,7 +1233,7 @@
     const [playerCount, setPlayerCount] = useState(2);    // 1 | 2
     const [cpuMode, setCpuMode] = useState(false);        // CPU対戦ON/OFF
     const [cpuDifficulty, setCpuDifficulty] = useState("medium"); // easy|medium|hard|pro
-    const [helpLang, setHelpLang] = useState("ja");       // "ja" | "en"
+    const [helpLang, setHelpLang] = useState("ja"); // "ja" | "en" — デフォルト日本語
     const [p1StartScore, setP1StartScore] = useState(501);
     const [p2StartScore, setP2StartScore] = useState(501);
     const [outMode, setOutMode] = useState("single");
@@ -1302,11 +1304,9 @@
     };
 
     // ── 01ゲーム用: ラウンド状態（useMemoを廃止し毎レンダーで即時計算）
-    //    useMemo は依存配列更新 → 再レンダー の2フェーズがあるため、
-    //    編集直後にコミットするとメモ化前の古い値を掴む。
-    //    レンダー内で直接計算することで同期ずれをゼロにする。
+    // winner確定後はroundState計算を止める（BUST等の誤表示防止）
     const roundState =
-      gameMode === "01"
+      (gameMode === "01" && !winner && confirmStage !== "gameover")
         ? getRoundState(
             activePlayer.remainingScore,
             currentThrows,
@@ -1371,6 +1371,8 @@
 
     // ── アシストバー（インライン計算 - useMemo廃止で常に最新値）──
     const assistInfo = (() => {
+      // winner確定後 / gameover中はアシスト計算を止める
+      if (winner || confirmStage === "gameover") return { text: "", sub: "", color: "text-zinc-700", pulse: false };
       if (isCpuTurn) return { text: "CPU THINKING...", sub: "", color: "text-indigo-400", pulse: true };
       try {
         if (gameMode === "countup") {
@@ -2023,7 +2025,7 @@
         setCpuMode(!!d.cpuMode);
         const safeDiff = ["easy","medium","hard","pro"].includes(d.cpuDifficulty) ? d.cpuDifficulty : "medium";
         setCpuDifficulty(safeDiff);
-        const safeLang = ["ja","en"].includes(d.helpLang) ? d.helpLang : "ja";
+        const safeLang = ["ja","en"].includes(d.helpLang) ? d.helpLang : "ja"; // 旧セーブはjaをデフォルト
         setHelpLang(safeLang);
         setUndoConfirmStage("idle");
         if (d.players && d.players[0] && d.players[1]) {
@@ -3211,7 +3213,7 @@
 
       /* ── How To ── */
       showHowTo && (() => {
-        const isJa = helpLang === "ja";
+        const isJa = helpLang !== "en"; // デフォルト日本語
         const helpItems = isJa ? [
           ["1. 入力", "盤面を直接タップするか、テンキーを使います。S/D/T でシングル・ダブル・トリプルを選んでから数字をタップ。"],
           ["2. 編集", "3つのダーツスロットをタップすると上書き編集できます。UNDOで1投取り消し、CLEARでターン全消去。"],
@@ -3269,7 +3271,7 @@
           "div",
           {
             className:
-              "fixed inset-0 z-50 bg-black/96 flex flex-col justify-center items-center p-4",
+              "fixed inset-0 z-[100] bg-[#050508] flex flex-col justify-center items-center p-4",
           },
           React.createElement(
             "div",
@@ -3348,7 +3350,7 @@
                   );
                 })()
               : React.createElement("div", { className: "space-y-2" },
-                  React.createElement("p", { className: "text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-2" }, "Perfect finish."),
+                  React.createElement("p", { className: "text-[10px] text-zinc-500 font-bold tracking-widest mb-2" }, "🎯 チェックアウト！"),
                   players.filter((p,i) => !cpuMode || i<2).map((p,i) =>
                     React.createElement("div", {
                       key: p.id,
@@ -3367,10 +3369,14 @@
                   playSound("revert");
                   setWinner(null);
                   setConfirmStage("throwing");
+                  setCurrentThrowsImmediate([]);
+                  setEditingThrowIndex(null);
+                  setUndoConfirmStage("idle");
+                  setCpuTurnPending(false);
                   setShowSettingsSetup(true);
                 },
                 className:
-                  "w-full py-3.5 bg-gradient-to-r from-amber-400 to-amber-500 text-black font-black text-sm rounded-2xl cursor-pointer hover:from-amber-300 hover:to-amber-400 shadow-[0_8px_24px_rgba(245,158,11,0.2)] tracking-[0.1em] uppercase transition",
+                  "w-full py-3.5 bg-gradient-to-r from-amber-400 to-amber-500 text-black font-black text-base rounded-2xl cursor-pointer hover:from-amber-300 hover:to-amber-400 shadow-[0_8px_24px_rgba(245,158,11,0.2)] tracking-[0.1em] uppercase transition",
               },
               "PLAY AGAIN",
             ),
