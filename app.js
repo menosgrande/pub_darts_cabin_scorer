@@ -1074,7 +1074,7 @@
       "div",
       {
         className:
-          "flex flex-col justify-between h-full gap-2 bg-black/10 p-1.5 rounded-2xl border border-zinc-900/40",
+          "flex flex-col justify-between h-full gap-2 bg-black/10 p-1.5 rounded-2xl border border-zinc-900/40 relative",
       },
       React.createElement(
         "div",
@@ -1113,19 +1113,20 @@
           isActive,
           isBust,
         }),
-          // BUST強調オーバーレイ（視認性大幅向上）
-        isBust && React.createElement(
-          "div",
+      ),
+      // BUST強調オーバーレイ
+      isBust && React.createElement(
+        "div",
+        { 
+          className: "absolute inset-0 flex items-center justify-center bg-rose-600/90 backdrop-blur-sm rounded-2xl z-10 pointer-events-none" 
+        },
+        React.createElement(
+          "span", 
           { 
-            className: "absolute inset-0 flex items-center justify-center bg-rose-600/90 backdrop-blur-sm rounded-2xl z-10 pointer-events-none" 
-          },
-          React.createElement(
-            "span", 
-            { 
-              className: "text-5xl font-black text-white tracking-[0.1em] animate-pulse drop-shadow-2xl" 
-            }, 
-            "BUST"
-          )
+            className: "text-5xl font-black text-white tracking-[0.1em] animate-pulse drop-shadow-2xl" 
+          }, 
+          "BUST"
+        )
       ),
       React.createElement(
         "div",
