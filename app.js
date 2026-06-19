@@ -323,16 +323,17 @@
     // 171～180: ARRANGE_TABLEに載っている例外スコア
     const impossible170 = [169, 168, 166, 165, 163, 162, 159];
     if (impossible170.includes(score)) {
-      const fallback = {
-        169: "T20 - T19 → 52",
-        168: "T20 - T20 → 48",
-        166: "T20 - T18 → 52",
-        165: "T20 - T19 → 48",
-        163: "T20 - T17 → 52",
-        162: "T20 - T20 → 42",
-        159: "T19 - T20 → 42",
+      // ボギー数: T20を1本打てば次のターンでチェックアウト可能な形になる
+      const bogeyNav = {
+        169: "T20 → 109",
+        168: "T20 → 108",
+        166: "T20 → 106",
+        165: "T20 → 105",
+        163: "T20 → 103",
+        162: "T20 → 102",
+        159: "T20 → 99",
       };
-      return fallback[score];
+      return bogeyNav[score];
     }
 
     // 2～170: テーブル参照
@@ -566,9 +567,10 @@
           const first = checkout.route.split(" - ")[0].trim();
           const isTriple = first.startsWith("T") && !first.includes("Bull");
           const isDouble = first.startsWith("D") && !first.includes("Bull");
+          // S-Bull は 25点 (separate bull設定時), D-Bull/Bull は 50点
           const isSingleBull = first === "S-Bull" || first === "S-Bull(25)";
           const isBull = first.includes("Bull");
-          const bullScore = isSingleBull ? 25 : 50;
+          const bullScore = isSingleBull ? 25 : 50; // separate bullでもCPUが正しく処理できる
           const num = isBull ? bullScore : parseInt(first.replace(/^[TDS]/,"")) || 0;
           return {
             score: isBull ? bullScore : num,
@@ -1238,16 +1240,16 @@
                       React.createElement(
                         "span",
                         {
-                          className: `text-[8px] font-mono flex-1 text-center truncate px-1 ${h.isBurst ? "text-rose-500 line-through" : "text-zinc-300 font-bold"}`,
+                          className: `text-[8px] font-mono flex-1 text-center truncate px-1 ${h.isBust ? "text-rose-500 line-through" : "text-zinc-300 font-bold"}`,
                         },
                         h.throws.map((t) => t.label).join(" · "),
                       ),
                       React.createElement(
                         "span",
                         {
-                          className: `text-[8px] font-black w-10 text-right shrink-0 ${h.isBurst ? "text-rose-500" : "text-amber-400"}`,
+                          className: `text-[8px] font-black w-10 text-right shrink-0 ${h.isBust ? "text-rose-500" : "text-amber-400"}`,
                         },
-                        h.isBurst ? "BUST" : h.roundScore,
+                        h.isBust ? "BUST" : h.roundScore,
                       ),
                     ),
               ),
@@ -1397,7 +1399,7 @@
     const isRoundBurst =
       gameMode === "01" && !winner &&
       (confirmStage === "next"
-        ? !!(committedRoundNode && committedRoundNode.isBurst)
+        ? !!(committedRoundNode && committedRoundNode.isBust)
         : roundState.isBust);
     const currentRoundSubtotal =
       committedRoundNode && confirmStage === "next"
@@ -1448,7 +1450,7 @@
           return buildCountUpAssist(activePlayer, currentThrows, cuRounds);
         }
         if (confirmStage === "next") {
-          if (committedRoundNode && committedRoundNode.isBurst) {
+          if (committedRoundNode && committedRoundNode.isBust) {
             return { text: "BUST", sub: "", color: "text-rose-500", pulse: false };
           }
           return buildAssistLine(
@@ -1530,7 +1532,7 @@
         } else {
           const freshState = getRoundState(pl.remainingScore, cpuThrows, om);
           const nextRem = freshState.remainingScore;
-          const node = { roundNum: pl.history.length + 1, throws: cpuThrows, roundScore: freshState.subtotal, remainingScore: nextRem, isBurst: freshState.isBust };
+          const node = { roundNum: pl.history.length + 1, throws: cpuThrows, roundScore: freshState.subtotal, remainingScore: nextRem, isBust: freshState.isBust };
           const mp = p.map((pp, i) => i === idx ? { ...pp, remainingScore: nextRem, history: [node, ...pp.history] } : pp);
           setPlayers(mp);
           if (nextRem === 0) {
@@ -2048,7 +2050,7 @@
             throws: liveThrows,
             roundScore: freshState.subtotal,
             remainingScore: nextRem,
-            isBurst: freshState.isBust,
+            isBust: freshState.isBust,
           };
           const mp = players.map((p, i) =>
             i === activePlayerIndex
