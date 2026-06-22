@@ -1,5 +1,9 @@
 (() => {
   const { useState, useEffect, useRef, useMemo } = React;
+  // ═══════════════════════════════════════════════════════════════════════
+  // ◆ SECTION: Constants
+  // ゲーム全体で共有する定数。WEDGES / 1ターンのダーツ数 / Count-Upラウンド数 / セーブキー等。
+  // ═══════════════════════════════════════════════════════════════════════
   const WEDGES = [
     20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5,
   ];
@@ -11,6 +15,11 @@
   // ─────────────────────────────────────────────────────────────────────────
   // ARRANGE_TABLE: 2～170点の標準チェックアウトルート
   // ─────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  // ◆ SECTION: Checkout Logic
+  // チェックアウトルート探索。ARRANGE_TABLE(標準アレンジ表) / BOGEY_SETUP_TABLE(ボギー数の一般的セットアップ) /
+  // getSteelDartsArrangement(高得点時のセットアップ提案) / findCheckoutRoute(動的チェックアウト探索)。
+  // ═══════════════════════════════════════════════════════════════════════
   const ARRANGE_TABLE = {
     170: "T20 - T20 - Bull",
     167: "T20 - T19 - Bull",
@@ -175,6 +184,29 @@
     2: "D1",
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // BOGEY_SETUP_TABLE: ボギー数(169/168/166/165/163/162/159)用の一般的アレンジ
+  //   この7点は3本では絶対に上がれない（標準double-out、3ダーツ前提）。
+  //   「理論上最適」ではなく、多くのプレイヤーが自然に投げる一般的なセットアップを表示する
+  //   （DARTSLIVE/PHOENIX等の市販マシンと同じ方針）。セパレートブル基準。
+  //   ファットブル(50/50)設定では159/165等が上がれる場合があるが、
+  //   それは findCheckoutRoute 側の通常探索で別途処理されるため、ここでは扱わない。
+  // ─────────────────────────────────────────────────────────────────────────
+  const BOGEY_SETUP_TABLE = {
+    169: "T20 - T19 - 52",
+    168: "T20 - T20 - 48",
+    166: "T20 - T20 - 46",
+    165: "T20 - T19 - 48",
+    163: "T20 - T17 - 52",
+    162: "T20 - T20 - 42",
+    159: "T19 - T19 - 45",
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ◆ SECTION: Round & Throw Helpers
+  // Checkout/Scoring双方が依存する共通基盤。cloneDeep / getSubtotal / normalizeOutMode /
+  // getRoundState(バースト・フィニッシュ判定) / getHitSoundType / getThrowFromCoords(盤面タップ→投擲変換)。
+  // ═══════════════════════════════════════════════════════════════════════
   const cloneDeep = (v) =>
     typeof window.structuredClone === "function"
       ? window.structuredClone(v)
@@ -320,21 +352,11 @@
     // 50点
     if (score === 50) return bullType === "separate" ? "D-Bull" : "Bull";
 
-    // 171～180: ARRANGE_TABLEに載っている例外スコア
-    const impossible170 = [169, 168, 166, 165, 163, 162, 159];
-    if (impossible170.includes(score)) {
-      // ボギー数: T20を1本打てば次のターンでチェックアウト可能な形になる
-      const bogeyNav = {
-        169: "T20 → 109",
-        168: "T20 → 108",
-        166: "T20 → 106",
-        165: "T20 → 105",
-        163: "T20 → 103",
-        162: "T20 → 102",
-        159: "T20 → 99",
-      };
-      return bogeyNav[score];
-    }
+    // 171～180: ARRANGE_TABLEに載っていないボギー数（3本では上がれないスコア）
+    // BOGEY_SETUP_TABLE は「理論上最適」ではなく、一般的に投げられるアレンジ。
+    // DARTSLIVE/PHOENIXのアシスト方針と同じく、多くのプレイヤーが自然に投げる
+    // セットアップを表示する（セパレートブル基準）。
+    if (BOGEY_SETUP_TABLE[score]) return BOGEY_SETUP_TABLE[score];
 
     // 2～170: テーブル参照
     if (score <= 170 && ARRANGE_TABLE[score]) return ARRANGE_TABLE[score];
@@ -349,8 +371,8 @@
         // 3本ともT20しか入らない → "T20 × 3" ペースで表示
         return `T20 - T20 - T20 (×${Math.ceil(score / 180)})`;
       }
-      // rem が解けるスコアかチェック (180以下 かつ impossible外 かつ テーブルにある)
-      if (rem <= 170 && !impossible170.includes(rem) && ARRANGE_TABLE[rem]) {
+      // rem が解けるスコアかチェック (180以下 かつ ボギー数以外 かつ テーブルにある)
+      if (rem <= 170 && !BOGEY_SETUP_TABLE[rem] && ARRANGE_TABLE[rem]) {
         const prefix = n === 1 ? "T20" : "T20 - T20";
         return `${prefix} - ${ARRANGE_TABLE[rem].split(" - ")[0]}…`;
       }
@@ -476,6 +498,11 @@
   //   ・301以上でも getSteelDartsArrangement が「次のT20でどこまで削るか」を返す
   //   ・残り点数と残り投げ数を右側に常時表示
   // ─────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  // ◆ SECTION: Scoring Logic (Leave Quality)
+  // 残り点数の「上がりやすさ」評価。compactRoute(表示整形) / BOGEY_NUMBERS / PREFERRED_LEAVES / LEAVE_PRIORITY /
+  // scoreLeaveQuality(リーブの質をスコア化)。
+  // ═══════════════════════════════════════════════════════════════════════
   const compactRoute = (route) => route.replace(/\s*-\s*/g, "-");
 
   const BOGEY_NUMBERS = new Set([169, 168, 166, 165, 163, 162, 159]);
@@ -535,6 +562,10 @@
   //   checkoutHitProb : チェックアウトルートを狙った際に成功する確率（0〜1）。
   //                     findCheckoutRouteで有効なルートが見つかった場合のみ参照される。
   //                     失敗時は通常ショット計算にフォールバックする。
+  // ═══════════════════════════════════════════════════════════════════════
+  // ◆ SECTION: CPU Difficulty
+  // CPU難易度パラメータ定義。spread(ばらつき) / dropChance(投げ損ない率) / checkoutHitProb(仕上げ成功率)。
+  // ═══════════════════════════════════════════════════════════════════════
   const CPU_DIFFICULTY = {
     easy:   { spread: 55, dropChance: 0.40, dropDarts: 2, checkoutHitProb: 0.10 },
     medium: { spread: 35, dropChance: 0.18, dropDarts: 1, checkoutHitProb: 0.30 },
@@ -542,6 +573,10 @@
     pro:    { spread: 8,  dropChance: 0.02, dropDarts: 0, checkoutHitProb: 0.82 },
   };
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // ◆ SECTION: CPU Strategy
+  // CPU自動投擲ロジック。cpuComputeThrow(1投の計算) / cpuPlayTurn(1ターン=最大3投の計算)。
+  // ═══════════════════════════════════════════════════════════════════════
   const cpuComputeThrow = (remaining, gameMode, outMode, difficulty, bullType) => {
     const cfg = CPU_DIFFICULTY[difficulty] || CPU_DIFFICULTY.medium;
     outMode = normalizeOutMode(outMode);
@@ -650,6 +685,11 @@
   };
   // ▲▲▲ チェックアウト/スコアリング/CPU関連ロジック ここまで ▲▲▲
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // ◆ SECTION: Scoring Logic (Assist Output) — つづき
+  // findHighScorePlan(301+の高得点セットアップ探索) / buildAssistLine(画面上部アシスト文言生成) /
+  // buildCountUpAssist(Count-Up用のペース表示)。CPU Strategyの前段(scoreLeaveQuality)と同一責務区分。
+  // ═══════════════════════════════════════════════════════════════════════
   const findHighScorePlan = (
     score,
     dartsLeft,
@@ -804,6 +844,11 @@
   // Icons
   // ─────────────────────────────────────────────────────────────────────────
   const Icons = {
+  // ═══════════════════════════════════════════════════════════════════════
+  // ◆ SECTION: React Component — Shared UI Pieces
+  // App()本体から使われる共有コンポーネント・アイコン群。Icons(SVGアイコン定義) / FliqloDigit・FliqloScoreboard(フリップ時計) /
+  // PlayerCockpit(プレイヤースコアボード)。ロジックには依存しない純粋な表示コンポーネント。
+  // ═══════════════════════════════════════════════════════════════════════
     Volume2: () =>
       React.createElement(
         "svg",
@@ -1106,11 +1151,17 @@
       "div",
       {
         className:
-          "flex flex-col justify-between h-full gap-2 bg-black/10 p-1.5 rounded-2xl border border-zinc-900/40 relative",
+          // アクティブプレイヤーは scale-105 + amber リングで視線誘導を強める
+          `flex flex-col justify-between h-full gap-2 bg-black/10 p-1.5 rounded-2xl border transition-all duration-200 ${
+            isActive
+              ? "border-amber-500/40 scale-105 ring-2 ring-amber-400/70 shadow-[0_0_20px_rgba(245,158,11,0.15)]"
+              : "border-zinc-900/40"
+          }`,
       },
       React.createElement(
         "div",
-        null,
+        // BUSTオーバーレイはスコア部分のみに限定する（履歴を覆わないよう relative をここに持たせる）
+        { className: "relative" },
         React.createElement(
           "div",
           { className: "mb-1.5 px-0.5" },
@@ -1145,20 +1196,20 @@
           isActive,
           isBust,
         }),
-      ),
-      // BUST強調オーバーレイ
-      isBust && React.createElement(
-        "div",
-        { 
-          className: "absolute inset-0 flex items-center justify-center bg-rose-600/90 backdrop-blur-sm rounded-2xl z-10 pointer-events-none" 
-        },
-        React.createElement(
-          "span", 
-          { 
-            className: "text-5xl font-black text-white tracking-[0.1em] animate-pulse drop-shadow-2xl" 
-          }, 
-          "BUST"
-        )
+        // BUST強調オーバーレイ（スコア部分の親divのみを覆う。履歴(history)は対象外）
+        isBust && React.createElement(
+          "div",
+          {
+            className: "absolute inset-0 flex items-center justify-center bg-rose-600/90 backdrop-blur-sm rounded-2xl z-10 pointer-events-none"
+          },
+          React.createElement(
+            "span",
+            {
+              className: "text-4xl font-black text-white tracking-[0.1em] animate-pulse drop-shadow-2xl"
+            },
+            "BUST"
+          )
+        ),
       ),
       React.createElement(
         "div",
@@ -1207,9 +1258,10 @@
                         "span",
                         {
                           className:
+                            // スマホでの折り返し防止: " · " 区切り → スペース区切りでコンパクトに (T20 T20 D20)
                             "text-[8px] font-mono flex-1 text-center truncate px-1 text-zinc-300 font-bold",
                         },
-                        h.throws.map((t) => t.label).join(" · "),
+                        h.throws.map((t) => t.label).join(" "),
                       ),
                       React.createElement(
                         "span",
@@ -1242,7 +1294,7 @@
                         {
                           className: `text-[8px] font-mono flex-1 text-center truncate px-1 ${h.isBust ? "text-rose-500 line-through" : "text-zinc-300 font-bold"}`,
                         },
-                        h.throws.map((t) => t.label).join(" · "),
+                        h.throws.map((t) => t.label).join(" "),
                       ),
                       React.createElement(
                         "span",
@@ -1261,6 +1313,11 @@
   // MAIN APP
   // ─────────────────────────────────────────────────────────────────────────
   function App() {
+  // ═══════════════════════════════════════════════════════════════════════
+  // ◆ SECTION: React Component — Main App
+  // アプリ本体。State定義 → Ref同期 → CPU/Save等のuseEffect → イベントハンドラ群（Save/Restoreを含む） → JSX。
+  // 内部の「Save / Restore Helpers」見出しは migrateSaveData 付近に別途記載。
+  // ═══════════════════════════════════════════════════════════════════════
     // ── ゲーム設定 ──
     // ★ 新しいstateを追加するときの4点チェックリスト ★
     // 1. useState宣言（ここ）
@@ -1921,21 +1978,13 @@
       if (confirmStage === "gameover") return;
       cancelCpuTimer();
       playSound("revert");
-      if (confirmStage === "next") {
-        // OK押し後のCLEAR = ターン確定を完全取り消し
-        // スナップからplayers・activePlayerIndexを戻す（スナップは消費する）
-        if (turnHistoryState.length > 0) {
-          const prev = turnHistoryState[turnHistoryState.length - 1];
-          setPlayers(prev.players);
-          setActivePlayerIndex(prev.activePlayerIndex);
-          setTurnHistoryState(turnHistoryState.slice(0, -1));
-        }
-        setCurrentThrowsImmediate([]);
-        setEditingThrowIndex(null);
-        setConfirmStage("throwing");
-        setUndoConfirmStage("idle");
-        return;
-      }
+      // ── CLEAR の責務: 入力バッファのクリアのみ ──
+      // turnHistoryState（確定ターン履歴）には一切触れない。
+      // confirmStage === "next" 中でも同じ。players/activePlayerIndex も変えない。
+      // → PREV のみが確定ターン履歴を巻き戻す唯一の操作。
+      //
+      // next中にCLEARを押すと throwing に戻るが、スコアは「OK時点で確定した値」のまま。
+      // ユーザーがターンごとスコアを取り消したい場合は PREV を使う。
       setCurrentThrowsImmediate([]);
       setEditingThrowIndex(null);
       setConfirmStage("throwing");
@@ -2085,17 +2134,21 @@
       } else if (confirmStage === "next") {
         // winner確定後のNEXT押下は無視（二重チェック）
         if (winner) return;
-            playSound("click");
-          
-            if (playerCount !== 1) {
-              setActivePlayerIndex(activePlayerIndex === 0 ? 1 : 0);
-            }
-            setCurrentThrowsImmediate([]);
-            setEditingThrowIndex(null);
-            setConfirmStage("throwing");
-          }
+        playSound("click");
+        if (playerCount !== 1) {
+          setActivePlayerIndex(activePlayerIndex === 0 ? 1 : 0);
+        }
+        setCurrentThrowsImmediate([]);
+        setEditingThrowIndex(null);
+        setConfirmStage("throwing");
+      }
     };
 
+    // ═══════════════════════════════════════════════════════════════════
+    // ◆ SECTION: Save / Restore Helpers (App内部)
+    // セーブデータの読み書き・バージョン移行・バリデーション。React state setterを直接呼ぶため
+    // App()の外には出していない（migrateSaveData自体は純粋関数）。
+    // ═══════════════════════════════════════════════════════════════════
     // ── セーブデータ migration 枠 ──
     // version が上がるたびに、ここに旧バージョンからの変換処理を追加する。
     // 現状は変換不要のため中身は空だが、枠を用意しておくことで
