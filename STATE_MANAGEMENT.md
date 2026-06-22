@@ -103,6 +103,26 @@
 
 ## PREV（turnHistoryState）の設計方針
 
+### CLEARとPREVは完全に別の責務を持つ（コマンド分離モデル）
+
+この分離が崩れると「点数が戻らない」「戻りすぎる」という体感バグが即発生する。
+**不変条件として守ること：`turnHistoryState` に触れる操作は `handleUndoCommittedTurn`（PREV）のみ。**
+
+| 操作 | 実装関数 | turnHistoryState | players | confirmStage | 一言 |
+|------|---------|-----------------|---------|--------------|------|
+| CLEAR | `handleFlushRound` | **触れない** | **触れない** | `"throwing"` に戻す | 入力バッファのリセットのみ |
+| PREV | `handleUndoCommittedTurn` | **pop する** | スナップから復元 | `"throwing"` に固定 | 唯一の履歴消費点 |
+
+**CLEARは「未確定入力状態への遷移」であり、コミット済み状態は一切変更しない。**
+`confirmStage === "next"` 中にCLEARを押しても、`players` のスコアはOK時点の確定値のまま残る。
+これは「キャンセル」ではなく「入力バッファを空にしてthrowingに戻る」操作であり、
+ターンごとスコアを取り消したい場合はPREVを使うというUIルール上の役割分担がある。
+
+**なぜ以前CLEARがturnHistoryStateを消費していたか（歴史的経緯）：**
+旧設計では `confirmStage === "next"` 中のCLEARを「ターン取り消し」として扱い、
+スナップからplayersを復元していた。これが「OK→CLEAR→PREV」で想定より戻りすぎる体感バグの根本原因となった。
+現在はこの分岐を削除し、CLEARは`confirmStage`に関係なく常に入力バッファのみをクリアする。
+
 ### PREVは状態復元機能ではない。PREVはターン巻き戻し機能である。
 
 この一文を覚えておくと、将来「モーダルも戻そう」「編集状態も戻そう」という誘惑を防げる。
@@ -287,17 +307,42 @@ const migrated = migrateSaveData(validated.data); // バージョン間の変換
 ```
 `validateSaveData` が「形式として読めるか」、`migrateSaveData` が「古い形式を新しい形式に変換できるか」を担当する形に分けると、責務が明確になる。version管理を始めた今がこの分岐点であることは認識しておく。
 
-### 2. CPUロジックの分離
-現状は単一HTML + CDN React構成（ビルドステップなし）のため、物理的なファイル分割は保留。
-コード内に将来の切り出し単位をコメントで明示済み：
+### 2. ロジックの論理整理（実施済み）と物理分割（保留中）
+
+**現状（実施済み）**: 物理ファイル分割はまだ行わず、`app.js` 単一ファイル内に以下10個のセクション見出し（`◆ SECTION:`コメント）を追加し、責務ごとの境界を明示している。
+
 ```
-checkout.js   → findCheckoutRoute, getSteelDartsArrangement
-scoring.js    → scoreLeaveQuality, findHighScorePlan, buildAssistLine
-difficulty.js → CPU_DIFFICULTY
-strategy.js   → cpuComputeThrow, cpuPlayTurn
+◆ Constants                                  — WEDGES, MAX_THROWS_PER_TURN, 各種定数
+◆ Checkout Logic                             — ARRANGE_TABLE, BOGEY_SETUP_TABLE,
+                                                getSteelDartsArrangement, findCheckoutRoute
+◆ Round & Throw Helpers                      — cloneDeep, getSubtotal, normalizeOutMode,
+                                                getRoundState, getHitSoundType, getThrowFromCoords
+◆ Scoring Logic (Leave Quality)              — compactRoute, BOGEY_NUMBERS, PREFERRED_LEAVES,
+                                                LEAVE_PRIORITY, scoreLeaveQuality
+◆ CPU Difficulty                             — CPU_DIFFICULTY
+◆ CPU Strategy                               — cpuComputeThrow, cpuPlayTurn
+◆ Scoring Logic (Assist Output) — つづき      — findHighScorePlan, buildAssistLine,
+                                                buildCountUpAssist
+◆ React Component — Shared UI Pieces         — Icons, FliqloDigit, FliqloScoreboard, PlayerCockpit
+◆ React Component — Main App                 — function App() 本体
+◆ Save / Restore Helpers (App内部)            — migrateSaveData, handleRestoreSave 周辺
 ```
-ビルドツール（esbuild/vite等）を導入するタイミングで、この単位のままファイル分割するとスムーズ。
-分割までは、この範囲の関数が外部state/propsに依存しないよう純粋関数を保つことを優先する。
+
+「Round & Throw Helpers」と「React Component — Shared UI Pieces」は元々の切り出し単位案（`checkout.js`/`scoring.js`/`difficulty.js`/`strategy.js`の4分類）には無かった領域。`getRoundState`等はCheckout/Scoring双方から参照される共通基盤のため、無理にどちらかへ分類すると依存関係の見通しが悪化すると判断し、独立セクションとして追加した。
+
+このセクション整理は **コメント追加のみ**（関数の中身・順序・state構造は無変更）で、git diffで `+` 行が全てコメント行であることを確認済み（削除行0、追加行は全て`//`または空行）。
+
+**物理ファイル分割（まだ実施しない）**: 上記セクションがそのまま将来の切り出し単位の候補になる。
+```
+checkout.js    → ARRANGE_TABLE, BOGEY_SETUP_TABLE, getSteelDartsArrangement, findCheckoutRoute
+scoring.js     → compactRoute, BOGEY_NUMBERS, PREFERRED_LEAVES, LEAVE_PRIORITY,
+                 scoreLeaveQuality, findHighScorePlan, buildAssistLine, buildCountUpAssist
+difficulty.js  → CPU_DIFFICULTY
+strategy.js    → cpuComputeThrow, cpuPlayTurn
+（命名未定）    → cloneDeep, getSubtotal, normalizeOutMode, getRoundState,
+                 getHitSoundType, getThrowFromCoords （Checkout/Scoring共通基盤）
+```
+物理分割の実施判断は「動く→仕様固める→利用者に触ってもらう→問題箇所が見える→そこで分割」の順を優先し、機能が安定するまでは保留する。分割までは、この範囲の関数が外部state/propsに依存しないよう純粋関数を保つことを優先する。
 
 `CPU_DIFFICULTY` の各パラメータの意味は「CPU Difficulty Parameters」章を参照。
 
@@ -324,3 +369,11 @@ const [stats, setStats] = useState(...); // ✕ 二重管理の元
 - **Bust**: バーストしたラウンドを統計の分母（投擲数）に含めるか、除外するかを最初に仕様として決める
 - **PREV**: 統計をstateにしていれば「巻き戻し後も古い統計が残る」事故が起きるが、`calculateStats(players)` 方式なら自動的に解決する
 - **CPU**: CPUの統計を人間と同じ計算ロジックで出すか、別枠にするか。CPUの投擲データは `cpuPlayTurn` の戻り値にバースト時の投擲も含まれるため、集計時にダブルカウントしないよう注意
+
+---
+
+## 設計原則まとめ（1行版）
+
+> **すべての状態遷移は「UI状態」と「履歴状態」を分離して考え、PREVのみが履歴（`turnHistoryState`）を変更する唯一の操作である。**
+
+この一文が崩れたとき（CLEARやその他の操作が`turnHistoryState`を消費し始めたとき）、PREV系のバグが再発する。
