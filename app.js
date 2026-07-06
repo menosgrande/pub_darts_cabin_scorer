@@ -724,7 +724,10 @@
     checkoutPref = "double",
   ) => {
     outMode = normalizeOutMode(outMode);
-    if (score <= 180 || dartsLeft <= 0) return null;
+    // 以前は score<=180 で弾いていたが、ターン途中（dartsLeft<3）の続きのプラン探索にも
+    // このsearch関数を再利用したいため撤廃。呼び出し側は「直接チェックアウトできない場合」
+    // にのみこれを使うので、スコア帯による足切りは不要。
+    if (dartsLeft <= 0) return null;
     const shots = [
       { label: "T20", pts: 60 },
       { label: "T19", pts: 57 },
@@ -823,7 +826,17 @@
       checkoutPref,
     );
     if (!result) {
-      const fallback = getSteelDartsArrangement(cur, bullType, outMode);
+      // ターン開始時（まだ1本も投げていない）は標準アレンジ表(ARRANGE_TABLE/BOGEY_SETUP_TABLE)を
+      // そのまま使う。一方ターン途中（既に1本以上投げていて dartsLeft < MAX_THROWS_PER_TURN）は
+      // getSteelDartsArrangement が「残り投げ数を無視して毎回ゼロから引き直す」ため、
+      // 1投目・2投目の結果と矛盾するアレンジ（例: T20-T18を投げた直後に3投目の代わりに
+      // 全く別の3本アレンジが出る）が起きていた。ターン途中は dartsLeft を渡せる
+      // findHighScorePlan を優先し、それでも見つからない場合のみ従来のフォールバックに回す。
+      const isFreshTurn = dartsLeft === MAX_THROWS_PER_TURN;
+      const fallback = isFreshTurn
+        ? getSteelDartsArrangement(cur, bullType, outMode)
+        : findHighScorePlan(cur, dartsLeft, bullType, outMode, checkoutPref) ||
+          getSteelDartsArrangement(cur, bullType, outMode);
       return {
         text: fallback ? compactRoute(fallback) : "SETUP",
         sub,
