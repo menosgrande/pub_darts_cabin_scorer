@@ -1410,8 +1410,6 @@
     const [undoConfirmStage, setUndoConfirmStage] = useState("idle");
     const boardRef = useRef(null);
     const isMultiTouchRef = useRef(false);
-    const actionBarRef = useRef(null);
-    const actionBarSpacerRef = useRef(null);
     const currentThrowsRef = useRef([]);
     const winnerRef = useRef(null);
     // 最新stateをrefで追跡 → useEffect内のクロージャが古い値を掴む問題を防ぐ
@@ -1739,67 +1737,6 @@
     useEffect(() => {
       currentThrowsRef.current = currentThrows;
     }, [currentThrows]);
-
-    // ── ピンチズーム対応: UNDO/CLEAR/PREV/MISSのアクションバーをVisual Viewport APIで追従させる ──
-    // スマホでピンチズームすると、このバーは通常のドキュメントフロー内の要素なので
-    // 画面外に流れてしまい押しにくくなる。ズーム中だけ position:fixed に切り替え、
-    // ズーム倍率の逆数でscale()して「実寸サイズのまま」画面下部に固定する。
-    // ズームを解除したら元のレイアウト位置に戻す。
-    useEffect(() => {
-      const vv = window.visualViewport;
-      if (!vv) return; // 未対応ブラウザでは何もしない（通常のレイアウトのまま）
-
-      let naturalHeight = 0; // ズームしていない時点でのバーの実際の高さ（px）
-
-      const update = () => {
-        const el = actionBarRef.current;
-        if (!el) return;
-        const scale = vv.scale || 1;
-        const isZoomed = scale > 1.02;
-
-        if (isZoomed) {
-          if (!el.dataset.pinned) {
-            // 固定に切り替える直前の高さを保存しておく（固定後はoffsetHeightが変わるため）
-            naturalHeight = el.offsetHeight;
-            el.dataset.pinned = "1";
-            el.style.position = "fixed";
-            el.style.left = "0px";
-            el.style.top = "0px";
-            el.style.margin = "0";
-            el.style.transformOrigin = "top left";
-            el.style.zIndex = "60";
-            if (actionBarSpacerRef.current) {
-              actionBarSpacerRef.current.style.height = `${naturalHeight}px`;
-            }
-          }
-          const bottomMargin = 10;
-          const x = vv.offsetLeft + (vv.width - el.offsetWidth) / 2;
-          const y = vv.offsetTop + vv.height - naturalHeight - bottomMargin;
-          el.style.transform = `translate(${x}px, ${y}px) scale(${1 / scale})`;
-        } else if (el.dataset.pinned) {
-          // ズーム解除：元のレイアウトに戻す
-          delete el.dataset.pinned;
-          el.style.position = "";
-          el.style.left = "";
-          el.style.top = "";
-          el.style.margin = "";
-          el.style.transform = "";
-          el.style.transformOrigin = "";
-          el.style.zIndex = "";
-          if (actionBarSpacerRef.current) {
-            actionBarSpacerRef.current.style.height = "0px";
-          }
-        }
-      };
-
-      vv.addEventListener("resize", update);
-      vv.addEventListener("scroll", update);
-      update();
-      return () => {
-        vv.removeEventListener("resize", update);
-        vv.removeEventListener("scroll", update);
-      };
-    }, []);
 
     const canAddMoreThrows =
       editingThrowIndex !== null ||
@@ -2840,7 +2777,7 @@
           /* ── アクションバー（ミス + 操作系） ── */
           React.createElement(
             "div",
-            { ref: actionBarRef, className: "w-full max-w-sm mt-2 flex gap-1.5 relative z-20" },
+            { className: "w-full max-w-sm mt-2 flex gap-1.5 relative z-20" },
             React.createElement(
               "button",
               {
@@ -2890,7 +2827,6 @@
               React.createElement("span", null, undoConfirmStage === "confirm" ? "SURE?" : "PREV"),
             ),
           ),
-          React.createElement("div", { ref: actionBarSpacerRef, style: { height: "0px" }, "aria-hidden": true }),
 
           /* ── Throw Slots + Round Sum ── */
           React.createElement(
