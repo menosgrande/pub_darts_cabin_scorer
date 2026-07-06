@@ -552,8 +552,11 @@
   //   easy = ±50点、1~4投分をランダムに落とす
   // ─────────────────────────────────────────────────────────────────────────
   // CPU難易度パラメータ定義
-  //   spread          : 狙った点数に対するばらつきの最大値（±spread点）。
-  //                     大きいほど散らばる＝下手。cpuComputeThrowの通常ショットで使用。
+  //   numberAccuracy  : 狙った番号（常に20）に当たる確率（0〜1）。外れると隣接ウェッジ
+  //                     （1 or 5）に逸れる。低いほど「20を狙って隣の1/5に刺さる」ミスが増える。
+  //   ringWeights     : 通常ショットでシングル/ダブル/トリプルどのリングに刺さるかの重み。
+  //                     実際のダーツと同様、下手なほど「細いトリプルを狙わずシングルの
+  //                     広い的を狙う」判断をするという想定（狙いは常に20、リングだけが変わる）。
   //   dropChance      : 1投ごとの「投げ損ない(MISS)」発生確率（0〜1）。
   //                     cpuPlayTurnのループ内で、対象ダーツ(i)がdropDarts範囲に入っているときのみ判定される。
   //   dropDarts       : 1ターン3投のうち、終盤何投がdropChance判定の対象になるか。
@@ -564,13 +567,13 @@
   //                     失敗時は通常ショット計算にフォールバックする。
   // ═══════════════════════════════════════════════════════════════════════
   // ◆ SECTION: CPU Difficulty
-  // CPU難易度パラメータ定義。spread(ばらつき) / dropChance(投げ損ない率) / checkoutHitProb(仕上げ成功率)。
+  // CPU難易度パラメータ定義。numberAccuracy/ringWeights(狙いの精度) / dropChance(投げ損ない率) / checkoutHitProb(仕上げ成功率)。
   // ═══════════════════════════════════════════════════════════════════════
   const CPU_DIFFICULTY = {
-    easy:   { spread: 55, dropChance: 0.40, dropDarts: 2, checkoutHitProb: 0.10 },
-    medium: { spread: 35, dropChance: 0.18, dropDarts: 1, checkoutHitProb: 0.30 },
-    hard:   { spread: 20, dropChance: 0.08, dropDarts: 1, checkoutHitProb: 0.60 },
-    pro:    { spread: 8,  dropChance: 0.02, dropDarts: 0, checkoutHitProb: 0.82 },
+    easy:   { numberAccuracy: 0.55, ringWeights: { single: 0.75, double: 0.22, triple: 0.03 }, dropChance: 0.40, dropDarts: 2, checkoutHitProb: 0.10 },
+    medium: { numberAccuracy: 0.72, ringWeights: { single: 0.30, double: 0.35, triple: 0.35 }, dropChance: 0.18, dropDarts: 1, checkoutHitProb: 0.30 },
+    hard:   { numberAccuracy: 0.85, ringWeights: { single: 0.08, double: 0.17, triple: 0.75 }, dropChance: 0.08, dropDarts: 1, checkoutHitProb: 0.60 },
+    pro:    { numberAccuracy: 0.95, ringWeights: { single: 0.03, double: 0.07, triple: 0.90 }, dropChance: 0.02, dropDarts: 0, checkoutHitProb: 0.82 },
   };
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -581,14 +584,9 @@
     const cfg = CPU_DIFFICULTY[difficulty] || CPU_DIFFICULTY.medium;
     outMode = normalizeOutMode(outMode);
 
-    // Count-Upならとにかく高得点狙い（T20が理想値）
     const safeRemaining = Math.max(2, remaining);
     const margin = outMode !== "single" ? 2 : 1;
-    const idealScore = gameMode === "countup" ? 60 : Math.min(safeRemaining - margin, 60);
-
-    // ばらつきを加算（残り点数を超えないようにガード、最小1点）
-    const spread = Math.round((Math.random() * 2 - 1) * cfg.spread);
-    let pts = Math.max(1, Math.min(60, Math.min(Math.max(1, idealScore + spread), safeRemaining - margin)));
+    const cap = gameMode === "countup" ? Infinity : safeRemaining - margin; // これを超えるとバーストする上限
 
     // 01ゲーム: チェックアウト可能なら狙う
     if (gameMode === "01" && remaining <= 170) {
@@ -617,15 +615,43 @@
       }
     }
 
-    // 通常ショット：pts を近いウェッジ値に変換
-    let mult = 1, num = pts;
-    if (pts >= 40 && pts % 3 === 0 && pts <= 60) { mult = 3; num = pts / 3; }
-    else if (pts >= 2 && pts % 2 === 0 && pts <= 40) { mult = 2; num = pts / 2; }
-    else if (pts > 20) { mult = 3; num = 20; pts = 60; }
-    // WEDGES にない番号を最近傍に丸める
-    const nearest = WEDGES.reduce((a,b) => Math.abs(b-num)<Math.abs(a-num)?b:a, WEDGES[0]);
-    num = nearest;
-    pts = num * mult;
+    // 通常ショット：常に20番を狙う。当たるかどうか(numberAccuracy)と、
+    // 当たった場合にどのリングに刺さるか(ringWeights)を難易度ごとに分けて判定する。
+    // easyは的の広いシングルを狙い、proは細いトリプルを狙う、という判断の違いを表現する。
+    let num = 20;
+    if (Math.random() > cfg.numberAccuracy) {
+      // 20の隣（WEDGES上で隣接する1 or 5）に逸れる
+      const idx20 = WEDGES.indexOf(20);
+      const neighborIdx = Math.random() < 0.5
+        ? (idx20 + 1) % WEDGES.length
+        : (idx20 - 1 + WEDGES.length) % WEDGES.length;
+      num = WEDGES[neighborIdx];
+    }
+
+    let mult = 1;
+    const roll = Math.random();
+    let acc = 0;
+    for (const ring of ["single", "double", "triple"]) {
+      acc += cfg.ringWeights[ring] ?? 0;
+      if (roll <= acc) { mult = ring === "triple" ? 3 : ring === "double" ? 2 : 1; break; }
+    }
+
+    let pts = num * mult;
+
+    // 残り点数を超えてバーストする組み合わせは、安全なリング/番号に落とし直す
+    if (pts > cap) {
+      if (cap >= 40) { mult = 2; }
+      else if (cap >= 20) { mult = 1; }
+      else {
+        // capが20未満：cap以下で最も近いウェッジをシングル狙いにする
+        const candidates = WEDGES.filter((w) => w <= cap);
+        num = candidates.length
+          ? candidates.reduce((a, b) => (Math.abs(b - cap) < Math.abs(a - cap) ? b : a), candidates[0])
+          : 1;
+        mult = 1;
+      }
+      pts = num * mult;
+    }
 
     return {
       score: pts === 0 ? 0 : num,
@@ -649,18 +675,18 @@
       const t = cpuComputeThrow(cur, gameMode, outMode, difficulty, bullType);
       const pts = t.score * t.multiplier;
 
-      // 座標を近似
+      // 座標を近似（毎回同じピクセルに刺さらないよう、リング/ウェッジ内で軽くばらつかせる）
       let rx = 0, ry = 0;
       if (t.multiplier === 0) {
-        const d = 188, a = Math.random() * Math.PI * 2;
+        const d = 188 + (Math.random() * 10 - 5), a = Math.random() * Math.PI * 2;
         rx = Math.round(d * Math.cos(a)); ry = Math.round(d * Math.sin(a));
       } else if (t.isBull) {
-        const d = 4, a = Math.random() * Math.PI * 2;
+        const d = 4 + Math.random() * 4, a = Math.random() * Math.PI * 2;
         rx = Math.round(d * Math.cos(a)); ry = Math.round(d * Math.sin(a));
       } else {
-        const d = t.multiplier === 3 ? 101 : t.multiplier === 2 ? 165 : 133;
+        const d = (t.multiplier === 3 ? 101 : t.multiplier === 2 ? 165 : 133) + (Math.random() * 8 - 4);
         const idx = WEDGES.indexOf(t.score);
-        const a = (idx * 18 - 90) * Math.PI / 180;
+        const a = ((idx * 18 - 90) + (Math.random() * 10 - 5)) * Math.PI / 180;
         rx = Math.round(d * Math.cos(a)); ry = Math.round(d * Math.sin(a));
       }
 
@@ -2545,7 +2571,7 @@
                   viewBox: "-210 -210 420 420",
                   className:
                     "w-full h-full drop-shadow-[0_15px_30px_rgba(0,0,0,0.95)] overflow-visible cursor-crosshair",
-                  style: { touchAction: "none" },
+                  style: { touchAction: "manipulation" },
                 },
                 React.createElement(
                   "defs",
