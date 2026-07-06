@@ -1409,6 +1409,7 @@
     const [confirmStage, setConfirmStage] = useState("throwing");
     const [undoConfirmStage, setUndoConfirmStage] = useState("idle");
     const boardRef = useRef(null);
+    const isMultiTouchRef = useRef(false);
     const actionBarRef = useRef(null);
     const actionBarSpacerRef = useRef(null);
     const currentThrowsRef = useRef([]);
@@ -2640,14 +2641,28 @@
                 {
                   ref: boardRef,
                   onClick: handleBoardClick,
+                  onTouchStart: (e) => {
+                    // 2本指以上（ピンチズームの開始）ならこのジェスチャー全体をタップ扱いしない
+                    if (e.touches.length > 1) isMultiTouchRef.current = true;
+                  },
+                  onTouchMove: (e) => {
+                    // タップ開始後に2本目の指が触れてもピンチ扱いにする（片手の指が後から追加されるケース）
+                    if (e.touches.length > 1) isMultiTouchRef.current = true;
+                  },
                   onTouchEnd: (e) => {
                     e.preventDefault();
+                    // まだ他の指が盤面に触れている、またはこのジェスチャーがピンチだった場合は
+                    // 投擲として扱わない（ピンチズーム解除時に点数が誤って入るのを防ぐ）
+                    if (e.touches.length > 0 || isMultiTouchRef.current) {
+                      if (e.touches.length === 0) isMultiTouchRef.current = false;
+                      return;
+                    }
                     handleBoardClick(e);
                   },
                   viewBox: "-210 -210 420 420",
                   className:
                     "w-full h-full drop-shadow-[0_15px_30px_rgba(0,0,0,0.95)] overflow-visible cursor-crosshair",
-                  style: { touchAction: "manipulation" },
+                  style: { touchAction: "pan-y" },
                 },
                 React.createElement(
                   "defs",
