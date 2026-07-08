@@ -10,7 +10,7 @@
   const MAX_THROWS_PER_TURN = 3;
   const COUNT_UP_ROUNDS = 8;
   const LOCAL_STORAGE_KEY = "pub_darts_cabin_state_v5";
-  const CURRENT_SAVE_VERSION = 6; // セーブデータ構造のバージョン。上げたら migrateSaveData に変換処理を追加。
+  const CURRENT_SAVE_VERSION = 7; // セーブデータ構造のバージョン。上げたら migrateSaveData に変換処理を追加。
 
   // ─────────────────────────────────────────────────────────────────────────
   // ARRANGE_TABLE: 2～170点の標準チェックアウトルート
@@ -295,6 +295,66 @@
     return "hit-single";
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // ◆ Cricket Logic
+  // 標準クリケット（自分が閉じた数字で得点、相手の点には影響しない）のルールエンジン。
+  // 対象ナンバーは20-19-18-17-16-15-Bull(=25として扱う)の7つ。
+  // 1本のダーツで入るマーク数 = S:1 D:2 T:3（Bullはシングル25点で1、ダブル50点で2）。
+  // マークが3を超えた分（オーバーフロー）は、その番号を「他の全プレイヤーがまだ閉じていない」場合のみ
+  // 得点（オーバーフロー本数×番号の値）に変換される。
+  // ─────────────────────────────────────────────────────────────────────────
+  const CRICKET_TARGETS = [20, 19, 18, 17, 16, 15, 25]; // 25 = Bull。降順でCPUの優先狙い順にもなる
+
+  // 投擲1本をクリケットの「対象ナンバー・マーク数・1マークあたりの得点」に変換する。
+  // 対象外（15-20でもBullでもない、またはMISS）ならnullを返す。
+  const getCricketTarget = (t) => {
+    if (!t || t.multiplier === 0) return null;
+    if (t.isBull) return { key: 25, marksHit: t.score === 50 ? 2 : 1, value: 25 };
+    if (!CRICKET_TARGETS.includes(t.score)) return null;
+    return { key: t.score, marksHit: t.multiplier, value: t.score };
+  };
+
+  // ダーツ1本をmarks/scoreに適用する（不変：新しいオブジェクトを返す純粋関数）
+  //   marks          : 適用対象プレイヤーの現在のマーク状況 { 20:0-3, 19:0-3, ..., 25:0-3 }
+  //   score          : 適用対象プレイヤーの現在のクリケット得点
+  //   opponentsMarks : 他プレイヤー全員のmarksの配列（そのナンバーが全員closed=3済みかどうかの判定に使う）
+  const applyCricketDart = (marks, score, t, opponentsMarks) => {
+    const target = getCricketTarget(t);
+    if (!target) return { marks, score, pointsScored: 0, key: null };
+    const { key, marksHit, value } = target;
+    const current = marks[key] || 0;
+    const usedToClose = Math.min(marksHit, Math.max(0, 3 - current));
+    const overflow = marksHit - usedToClose; // 3を閉じた後に余ったマーク数
+    const updatedMarks = { ...marks, [key]: Math.min(3, current + marksHit) };
+    // 対戦相手がいない（ソロ練習）場合は常にscorable扱い
+    const allOpponentsClosed =
+      opponentsMarks.length > 0 && opponentsMarks.every((om) => (om[key] || 0) >= 3);
+    const pointsScored = allOpponentsClosed ? 0 : overflow * value;
+    return { marks: updatedMarks, score: score + pointsScored, pointsScored, key };
+  };
+
+  // currentThrows（最大3本）をまとめて適用し、そのターン終了時点のmarks/score/獲得点を返す。
+  // 01ゲームのgetRoundStateに相当するもの（ライブ表示・コミット処理の両方から呼ばれる）。
+  const getCricketRoundState = (marks, score, throws, opponentsMarks) => {
+    let m = marks, s = score, pointsThisTurn = 0;
+    for (const t of throws) {
+      const r = applyCricketDart(m, s, t, opponentsMarks);
+      m = r.marks; s = r.score; pointsThisTurn += r.pointsScored;
+    }
+    return { marks: m, score: s, pointsThisTurn };
+  };
+
+  const isCricketAllClosed = (marks) => CRICKET_TARGETS.every((k) => (marks[k] || 0) >= 3);
+
+  // 勝利判定: 全ナンバークローズ かつ 他の全プレイヤー以上の得点。
+  // opponents が空（ソロ練習）の場合は全クローズのみで勝利。
+  const checkCricketWinner = (player, opponents) =>
+    isCricketAllClosed(player.cricketMarks) &&
+    opponents.every((o) => player.cricketScore >= o.cricketScore);
+
+  const makeEmptyCricketMarks = () =>
+    CRICKET_TARGETS.reduce((acc, k) => ({ ...acc, [k]: 0 }), {});
+
   const getThrowFromCoords = (x, y, bullType) => {
     const r = Math.sqrt(x * x + y * y);
     const rBullseye = 8.5,
@@ -571,7 +631,7 @@
   // ═══════════════════════════════════════════════════════════════════════
   const CPU_DIFFICULTY = {
     easy:   { numberAccuracy: 0.55, ringWeights: { single: 0.75, double: 0.22, triple: 0.03 }, dropChance: 0.40, dropDarts: 2, checkoutHitProb: 0.10 },
-    medium: { numberAccuracy: 0.72, ringWeights: { single: 0.30, double: 0.35, triple: 0.35 }, dropChance: 0.18, dropDarts: 1, checkoutHitProb: 0.30 },
+    medium: { numberAccuracy: 0.72, ringWeights: { single: 0.35, double: 0.45, triple: 0.20 }, dropChance: 0.18, dropDarts: 1, checkoutHitProb: 0.30 },
     hard:   { numberAccuracy: 0.85, ringWeights: { single: 0.08, double: 0.17, triple: 0.75 }, dropChance: 0.08, dropDarts: 1, checkoutHitProb: 0.60 },
     pro:    { numberAccuracy: 0.95, ringWeights: { single: 0.03, double: 0.07, triple: 0.90 }, dropChance: 0.02, dropDarts: 0, checkoutHitProb: 0.82 },
   };
@@ -594,24 +654,55 @@
       if (checkout) {
         // proは高確率で決める、easyは低確率
         const hitProb = cfg.checkoutHitProb ?? 0.4;
+        const first = checkout.route.split(" - ")[0].trim();
+        const isTriple = first.startsWith("T") && !first.includes("Bull");
+        const isDouble = first.startsWith("D") && !first.includes("Bull");
+        // S-Bull は 25点 (separate bull設定時), D-Bull/Bull は 50点
+        const isSingleBull = first === "S-Bull" || first === "S-Bull(25)";
+        const isBull = first.includes("Bull");
+        const bullScore = isSingleBull ? 25 : 50; // separate bullでもCPUが正しく処理できる
+        const num = isBull ? bullScore : parseInt(first.replace(/^[TDS]/, "")) || 0;
+
         if (Math.random() < hitProb) {
-          // チェックアウトルートの最初のショットを採用
-          // " - " で分割して D-Bull が壊れないようにする
-          const first = checkout.route.split(" - ")[0].trim();
-          const isTriple = first.startsWith("T") && !first.includes("Bull");
-          const isDouble = first.startsWith("D") && !first.includes("Bull");
-          // S-Bull は 25点 (separate bull設定時), D-Bull/Bull は 50点
-          const isSingleBull = first === "S-Bull" || first === "S-Bull(25)";
-          const isBull = first.includes("Bull");
-          const bullScore = isSingleBull ? 25 : 50; // separate bullでもCPUが正しく処理できる
-          const num = isBull ? bullScore : parseInt(first.replace(/^[TDS]/,"")) || 0;
+          // 成功：チェックアウトルートの最初のショットを採用
           return {
             score: isBull ? bullScore : num,
             multiplier: isBull ? 1 : isTriple ? 3 : isDouble ? 2 : 1,
-            label: first.trim(),
-            isBull
+            label: first,
+            isBull,
           };
         }
+
+        // 失敗：「20番に切り替える」のではなく、狙った番号のまま一段階弱いリングに
+        // 落ちる自然なミスを再現する（ダブル失敗→同じ番号のシングル、が最も典型的）。
+        if (isBull) {
+          // インナーブル失敗→アウターブル、さらに外れれば隣接シングルへ
+          if (Math.random() < 0.6) {
+            return { score: 25, multiplier: 1, label: "S-Bull(25)", isBull: true };
+          }
+          const missNum = WEDGES[Math.floor(Math.random() * WEDGES.length)];
+          return { score: missNum, multiplier: 1, label: `S${missNum}`, isBull: false };
+        }
+        if (isTriple) {
+          // トリプル失敗→同じ番号のシングルへ落ちることが多い（まれにダブルへ）
+          const toDouble = Math.random() < 0.15;
+          return toDouble
+            ? { score: num, multiplier: 2, label: `D${num}`, isBull: false }
+            : { score: num, multiplier: 1, label: `S${num}`, isBull: false };
+        }
+        if (isDouble) {
+          // ダブル失敗→同じ番号のシングルへ（一番よくある外し方）。まれに完全ミス
+          if (Math.random() < 0.08) {
+            return { score: 0, multiplier: 0, label: "MISS", isBull: false };
+          }
+          return { score: num, multiplier: 1, label: `S${num}`, isBull: false };
+        }
+        // シングル狙い（低い残り点数）失敗→隣のウェッジへ逸れる
+        const idx = WEDGES.indexOf(num);
+        const missNum = idx >= 0
+          ? WEDGES[Math.random() < 0.5 ? (idx + 1) % WEDGES.length : (idx - 1 + WEDGES.length) % WEDGES.length]
+          : num;
+        return { score: missNum, multiplier: 1, label: `S${missNum}`, isBull: false };
       }
     }
 
@@ -708,6 +799,89 @@
       if (throws.length >= 3) break;
     }
     return throws.slice(0, 3); // 絶対に3投を超えない
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Cricket CPU戦略
+  //   ①まだ自分が閉じていないナンバーを高い順（CRICKET_TARGETSの並び）に狙う
+  //   ②自分が全部閉じ終えたら、相手がまだ閉じていない最も高いナンバーを狙って加点する
+  //   通常ショットと同じ numberAccuracy / ringWeights を精度モデルとして流用する。
+  // ─────────────────────────────────────────────────────────────────────────
+  const cpuComputeCricketThrow = (myMarks, opponentsMarks, difficulty) => {
+    const cfg = CPU_DIFFICULTY[difficulty] || CPU_DIFFICULTY.medium;
+
+    const openForMe = CRICKET_TARGETS.filter((k) => (myMarks[k] || 0) < 3);
+    let targetKey;
+    if (openForMe.length > 0) {
+      targetKey = openForMe[0];
+    } else {
+      const scorable = CRICKET_TARGETS.filter(
+        (k) => opponentsMarks.length === 0 || !opponentsMarks.every((om) => (om[k] || 0) >= 3),
+      );
+      targetKey = scorable.length > 0 ? scorable[0] : 20;
+    }
+
+    // Bull狙い
+    if (targetKey === 25) {
+      if (Math.random() > cfg.numberAccuracy) {
+        // Bull失投：適当な番号のシングルへ逸れる
+        const num = WEDGES[Math.floor(Math.random() * WEDGES.length)];
+        return { score: num, multiplier: 1, label: `S${num}`, isBull: false };
+      }
+      // ringWeights.tripleをインナーブル（50点=2マーク）を狙う精度の代わりに流用
+      const isInner = Math.random() < cfg.ringWeights.triple;
+      return isInner
+        ? { score: 50, multiplier: 1, label: "D-Bull", isBull: true }
+        : { score: 25, multiplier: 1, label: "S-Bull(25)", isBull: true };
+    }
+
+    // 通常ナンバー狙い：外れると隣接ウェッジに逸れる
+    let num = targetKey;
+    if (Math.random() > cfg.numberAccuracy) {
+      const idx = WEDGES.indexOf(targetKey);
+      const neighborIdx = Math.random() < 0.5
+        ? (idx + 1) % WEDGES.length
+        : (idx - 1 + WEDGES.length) % WEDGES.length;
+      num = WEDGES[neighborIdx];
+    }
+
+    let mult = 1, roll = Math.random(), acc = 0;
+    for (const ring of ["single", "double", "triple"]) {
+      acc += cfg.ringWeights[ring] ?? 0;
+      if (roll <= acc) { mult = ring === "triple" ? 3 : ring === "double" ? 2 : 1; break; }
+    }
+    return { score: num, multiplier: mult, label: `${mult === 3 ? "T" : mult === 2 ? "D" : "S"}${num}`, isBull: false };
+  };
+
+  // CPUがクリケットのターン分（3投）を計算して返す。座標近似はcpuPlayTurnと同じ考え方。
+  const cpuPlayCricketTurn = (myMarks, opponentsMarks, difficulty) => {
+    const cfg = CPU_DIFFICULTY[difficulty] || CPU_DIFFICULTY.medium;
+    const throws = [];
+    let marks = { ...myMarks };
+
+    for (let i = 0; i < MAX_THROWS_PER_TURN; i++) {
+      if (Math.random() < cfg.dropChance && i >= (MAX_THROWS_PER_TURN - cfg.dropDarts)) break;
+
+      const t = cpuComputeCricketThrow(marks, opponentsMarks, difficulty);
+
+      let rx = 0, ry = 0;
+      if (t.isBull) {
+        const d = 4 + Math.random() * 4, a = Math.random() * Math.PI * 2;
+        rx = Math.round(d * Math.cos(a)); ry = Math.round(d * Math.sin(a));
+      } else {
+        const d = (t.multiplier === 3 ? 101 : t.multiplier === 2 ? 165 : 133) + (Math.random() * 8 - 4);
+        const idx = WEDGES.indexOf(t.score);
+        const a = ((idx * 18 - 90) + (Math.random() * 10 - 5)) * Math.PI / 180;
+        rx = Math.round(d * Math.cos(a)); ry = Math.round(d * Math.sin(a));
+      }
+
+      throws.push({ ...t, x: rx, y: ry });
+      // このダーツ後の自分のmarksを更新して次のダーツの狙い先判断に反映する
+      // （得点計算はpointsに影響しないのでscore/opponentsMarksはダミーで構わない）
+      marks = applyCricketDart(marks, 0, t, opponentsMarks).marks;
+      if (throws.length >= MAX_THROWS_PER_TURN) break;
+    }
+    return throws.slice(0, MAX_THROWS_PER_TURN);
   };
   // ▲▲▲ チェックアウト/スコアリング/CPU関連ロジック ここまで ▲▲▲
 
@@ -875,6 +1049,37 @@
       text: `AVG ${avg}/R → 予測 ${projected}`,
       sub: `残 ${remaining}R`,
       color: avg >= 40 ? "text-amber-300" : "text-zinc-500",
+      pulse: false,
+    };
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Cricket: 次に狙うべきナンバーの提示（自分がまだ閉じていない最上位ナンバー優先）
+  // ─────────────────────────────────────────────────────────────────────────
+  const buildCricketAssist = (player, opponentsMarks, currentThrows) => {
+    const live = getCricketRoundState(player.cricketMarks, player.cricketScore, currentThrows, opponentsMarks);
+    const openForMe = CRICKET_TARGETS.filter((k) => (live.marks[k] || 0) < 3);
+    const label = (k) => (k === 25 ? "BULL" : String(k));
+    if (openForMe.length === 0) {
+      const scorable = CRICKET_TARGETS.filter(
+        (k) => opponentsMarks.length === 0 || !opponentsMarks.every((om) => (om[k] || 0) >= 3),
+      );
+      if (scorable.length === 0) {
+        return { text: "ALL CLOSED", sub: `SCORE ${live.score}`, color: "text-amber-300", pulse: false };
+      }
+      return {
+        text: `SCORE ON ${label(scorable[0])}`,
+        sub: `SCORE ${live.score}`,
+        color: "text-amber-300",
+        pulse: true,
+      };
+    }
+    const target = openForMe[0];
+    const need = 3 - (live.marks[target] || 0);
+    return {
+      text: `AIM ${label(target)} (残${need})`,
+      sub: `SCORE ${live.score}`,
+      color: "text-zinc-500",
       pulse: false,
     };
   };
@@ -1276,7 +1481,7 @@
                 "— no rounds —",
               )
             : player.history.map((h, idx) =>
-                gameMode === "countup"
+                gameMode !== "01"
                   ? React.createElement(
                       "div",
                       {
@@ -1363,7 +1568,7 @@
     // 2. CPU useEffect内で参照する場合 → useRef宣言(~L1285) + Ref同期(~L1299)
     // 3. localStorage保存リスト(~L1519) に追加
     // 4. handleRestoreSave(~L2030) で復元
-    const [gameMode, setGameMode] = useState("01");       // "01" | "countup"
+    const [gameMode, setGameMode] = useState("01");       // "01" | "countup" | "cricket"
     const [playerCount, setPlayerCount] = useState(2);    // 1 | 2
     const [cpuMode, setCpuMode] = useState(false);        // CPU対戦ON/OFF
     const [cpuDifficulty, setCpuDifficulty] = useState("medium"); // easy|medium|hard|pro
@@ -1387,12 +1592,15 @@
     // ── プレイヤー状態 ──
     // 01ゲーム: remainingScore を使用
     // Count-Up: accumulatedScore を使用
+    // Cricket: cricketMarks(ナンバーごとのマーク数) / cricketScore を使用
     const makePlayer = (id, name, startScore) => ({
       id,
       name,
       initialScore: startScore,
       remainingScore: startScore,
       accumulatedScore: 0,
+      cricketMarks: makeEmptyCricketMarks(),
+      cricketScore: 0,
       history: [],
     });
 
@@ -1487,8 +1695,23 @@
             subtotal: getSubtotal(currentThrows),
           };
 
+    // ── Cricketゲーム用: ライブのマーク/得点状態（打つたびに即時反映）
+    const opponentsCricketMarksForActive =
+      playerCount === 1
+        ? []
+        : players.filter((_, i) => i !== activePlayerIndex).map((p) => p.cricketMarks);
+    const cricketLiveState =
+      (gameMode === "cricket" && !winner && confirmStage !== "gameover")
+        ? getCricketRoundState(
+            activePlayer.cricketMarks,
+            activePlayer.cricketScore,
+            currentThrows,
+            opponentsCricketMarksForActive,
+          )
+        : { marks: activePlayer.cricketMarks, score: activePlayer.cricketScore, pointsThisTurn: 0 };
+
     const committedRoundNode =
-      gameMode === "01" &&
+      (gameMode === "01" || gameMode === "cricket") &&
       confirmStage === "next" &&
       activePlayer.history.length > 0
         ? activePlayer.history[0]
@@ -1501,7 +1724,9 @@
     const currentRoundSubtotal =
       committedRoundNode && confirmStage === "next"
         ? committedRoundNode.roundScore
-        : getSubtotal(currentThrows);
+        : gameMode === "cricket"
+          ? cricketLiveState.pointsThisTurn
+          : getSubtotal(currentThrows);
     // CPUが操作するのは P2(index=1) かつ throwing 中のみ（設定画面表示中は動かさない）
     // !editingThrowIndex: 編集モード中にCPUが割り込まないようにする
     const isCpuTurn = cpuMode && activePlayerIndex === 1
@@ -1517,6 +1742,23 @@
       return Math.min(p.accumulatedScore + added, 9999);
     };
 
+    // Cricket用表示スコア（自分の手番中はライブのcricketLiveStateを反映）
+    const cricketDisplayScore = (pi) => {
+      const p = players[pi];
+      const isActive = pi === activePlayerIndex;
+      const val = isActive && confirmStage === "throwing" ? cricketLiveState.score : p.cricketScore;
+      return Math.min(val, 9999);
+    };
+    // Cricketスコアボード表示用: 自分の手番中はライブのマーク状況を反映
+    const p1CricketMarks =
+      activePlayerIndex === 0 && confirmStage === "throwing" && gameMode === "cricket"
+        ? cricketLiveState.marks
+        : players[0].cricketMarks;
+    const p2CricketMarks =
+      activePlayerIndex === 1 && confirmStage === "throwing" && gameMode === "cricket"
+        ? cricketLiveState.marks
+        : players[1].cricketMarks;
+
     // 01ゲーム用表示スコア
     const currentActiveRemaining =
       gameMode === "01"
@@ -1527,15 +1769,19 @@
     const p1DisplayScore =
       gameMode === "countup"
         ? cuDisplayScore(0)
-        : activePlayerIndex === 0
-          ? currentActiveRemaining
-          : players[0].remainingScore;
+        : gameMode === "cricket"
+          ? cricketDisplayScore(0)
+          : activePlayerIndex === 0
+            ? currentActiveRemaining
+            : players[0].remainingScore;
     const p2DisplayScore =
       gameMode === "countup"
         ? cuDisplayScore(1)
-        : activePlayerIndex === 1
-          ? currentActiveRemaining
-          : players[1].remainingScore;
+        : gameMode === "cricket"
+          ? cricketDisplayScore(1)
+          : activePlayerIndex === 1
+            ? currentActiveRemaining
+            : players[1].remainingScore;
 
     // ── アシストバー（インライン計算 - useMemo廃止で常に最新値）──
     const assistInfo = (() => {
@@ -1545,6 +1791,12 @@
       try {
         if (gameMode === "countup") {
           return buildCountUpAssist(activePlayer, currentThrows, cuRounds);
+        }
+        if (gameMode === "cricket") {
+          if (confirmStage === "next") {
+            return buildCricketAssist(activePlayer, opponentsCricketMarksForActive, []);
+          }
+          return buildCricketAssist(activePlayer, opponentsCricketMarksForActive, currentThrows);
         }
         if (confirmStage === "next") {
           if (committedRoundNode && committedRoundNode.isBust) {
@@ -1594,7 +1846,10 @@
         const cu = cuRoundsRef.current;
         const pc = playerCountRef.current;
         const remaining = gm === "countup" ? 9999 : pl.remainingScore;
-        const cpuThrows = cpuPlayTurn(remaining, gm, om, diff, bt);
+        const opponentsMarks = pc === 1 ? [] : p.filter((_, i) => i !== idx).map((pp) => pp.cricketMarks);
+        const cpuThrows = gm === "cricket"
+          ? cpuPlayCricketTurn(pl.cricketMarks, opponentsMarks, diff)
+          : cpuPlayTurn(remaining, gm, om, diff, bt);
         // キャンセル・ゲーム終了チェック（state更新前に必ず確認）
         if (cancelled) return;
         // winnerRef で最新のwinner状態を確認（stateクロージャ問題を回避）
@@ -1623,6 +1878,19 @@
             setConfirmStage("gameover"); setCurrentThrowsImmediate([]);
             playSound("victory");
             setWinner({ ...w, countUpResult: true, isDraw, scores: rel.map(pp => ({ name: pp.name, score: pp.accumulatedScore })) });
+          } else {
+            playSound("click"); setCurrentThrowsImmediate([]); setActivePlayerIndex(0); setConfirmStage("throwing");
+          }
+        } else if (gm === "cricket") {
+          const oppMarksList = pc === 1 ? [] : p.filter((_, i) => i !== idx).map((pp) => pp.cricketMarks);
+          const result = getCricketRoundState(pl.cricketMarks, pl.cricketScore, cpuThrows, oppMarksList);
+          const node = { roundNum: pl.history.length + 1, throws: cpuThrows, roundScore: result.pointsThisTurn, cricketMarks: result.marks, cricketScore: result.score };
+          const mp = p.map((pp, i) => i === idx ? { ...pp, cricketMarks: result.marks, cricketScore: result.score, history: [node, ...pp.history] } : pp);
+          setPlayers(mp);
+          const others = pc === 1 ? [] : mp.filter((_, i) => i !== idx);
+          if (checkCricketWinner(mp[idx], others)) {
+            setConfirmStage("gameover"); playSound("victory");
+            setWinner({ ...mp[idx], cricketResult: true, isDraw: false, scores: (pc === 1 ? [mp[idx]] : mp).map(pp => ({ name: pp.name, score: pp.cricketScore })) });
           } else {
             playSound("click"); setCurrentThrowsImmediate([]); setActivePlayerIndex(0); setConfirmStage("throwing");
           }
@@ -2124,6 +2392,49 @@
             playSound("click");
             setConfirmStage("next");
           }
+        } else if (gameMode === "cricket") {
+          // Cricket: 現在のダーツをマーク/得点に反映
+          const opponentsMarks = playerCount === 1
+            ? []
+            : players.filter((_, i) => i !== activePlayerIndex).map((p) => p.cricketMarks);
+          const result = getCricketRoundState(
+            activePlayer.cricketMarks,
+            activePlayer.cricketScore,
+            liveThrows,
+            opponentsMarks,
+          );
+          const node = {
+            roundNum: activePlayer.history.length + 1,
+            throws: liveThrows,
+            roundScore: result.pointsThisTurn,
+            cricketMarks: result.marks,
+            cricketScore: result.score,
+          };
+          const mp = players.map((p, i) =>
+            i === activePlayerIndex
+              ? { ...p, cricketMarks: result.marks, cricketScore: result.score, history: [node, ...p.history] }
+              : p,
+          );
+          setPlayers(mp);
+          const others = playerCount === 1 ? [] : mp.filter((_, i) => i !== activePlayerIndex);
+          if (checkCricketWinner(mp[activePlayerIndex], others)) {
+            setConfirmStage("gameover");
+            setCurrentThrowsImmediate([]);
+            setEditingThrowIndex(null);
+            playSound("victory");
+            setWinner({
+              ...mp[activePlayerIndex],
+              cricketResult: true,
+              isDraw: false,
+              scores: (playerCount === 1 ? [mp[activePlayerIndex]] : mp).map((p) => ({
+                name: p.name,
+                score: p.cricketScore,
+              })),
+            });
+          } else {
+            playSound("click");
+            setConfirmStage("next");
+          }
         } else {
           // 01ゲーム: useMemoのroundStateに依存せず、currentThrowsから直接計算
           // → 編集モード後のコミットでバースト判定がズレる問題を根本解決
@@ -2213,8 +2524,10 @@
         case 3:
         case 4:
         case 5:
+        case 6:
           // 旧バージョン: 現状は構造変更なしなのでそのまま通す。
-          // 将来フィールド名変更やデフォルト値補完が必要になったらここに追加。
+          // v7でgameMode="cricket"とplayer.cricketMarks/cricketScoreを追加したが、
+          // どちらも「無ければ未使用として扱われるだけ」の追加フィールドなので変換不要。
           break;
         default:
           break;
@@ -2237,7 +2550,7 @@
           clearSavedGame();
           return false;
         }
-        const restoredMode = ["01", "countup"].includes(d.gameMode) ? d.gameMode : "01";
+        const restoredMode = ["01", "countup", "cricket"].includes(d.gameMode) ? d.gameMode : "01";
         const restoredPlayers =
           Array.isArray(d.players) && d.players.length === 2
             ? d.players
@@ -2415,7 +2728,9 @@
               },
               gameMode === "countup"
                 ? `COUNT-UP · ${cuRounds}R`
-                : "Interactive Scorer",
+                : gameMode === "cricket"
+                  ? "CRICKET · 15-20 & BULL"
+                  : "Interactive Scorer",
             ),
           ),
         ),
@@ -2662,47 +2977,94 @@
                     rs = ((a - 9) * Math.PI) / 180,
                     re = ((a + 9) * Math.PI) / 180,
                     ev = i % 2 === 0;
+                  const ta = (a * Math.PI) / 180;
                   const bp = (r1, r2) => {
-                    const x1 = r1 * Math.cos(rs),
-                      y1 = r1 * Math.sin(rs),
-                      x2 = r2 * Math.cos(rs),
-                      y2 = r2 * Math.sin(rs),
-                      x3 = r2 * Math.cos(re),
-                      y3 = r2 * Math.sin(re),
-                      x4 = r1 * Math.cos(re),
-                      y4 = r1 * Math.sin(re);
+                    const x1 = r1 * Math.cos(rs), y1 = r1 * Math.sin(rs),
+                      x2 = r2 * Math.cos(rs), y2 = r2 * Math.sin(rs),
+                      x3 = r2 * Math.cos(re), y3 = r2 * Math.sin(re),
+                      x4 = r1 * Math.cos(re), y4 = r1 * Math.sin(re);
                     return `M ${x1} ${y1} L ${x2} ${y2} A ${r2} ${r2} 0 0 1 ${x3} ${y3} L ${x4} ${y4} A ${r1} ${r1} 0 0 0 ${x1} ${y1} Z`;
                   };
-                  const ta = (a * Math.PI) / 180,
-                    tx = 185 * Math.cos(ta),
+                  const tx = 185 * Math.cos(ta),
                     ty = 185 * Math.sin(ta);
+                  // ── Cricket: 15-20/Bull以外は常に暗く沈める。対象ナンバーは
+                  //    3マーク未満(オープン中)は白(シングル)/黄(ダブル・トリプル)、
+                  //    自分（現在投げているプレイヤー）が3マーク到達したらプレイヤーカラーに
+                  //    切り替え（シングル=薄い色、ダブル・トリプル=濃い色）てボーナス得点ゾーンを示す。
+                  //    相手だけが先に3マーク到達している場合は相手の色に染める（急いで閉じないと
+                  //    相手に加点され続けることを視覚的に警告する）。相手も含め全員が閉じたら暗く沈める。 ──
+                  const isCricketNum = gameMode === "cricket" && CRICKET_TARGETS.includes(w);
+                  const myMarksAll = activePlayerIndex === 0 ? p1CricketMarks : p2CricketMarks;
+                  const oppMarksAll = activePlayerIndex === 0 ? p2CricketMarks : p1CricketMarks;
+                  const myMarks = isCricketNum ? (myMarksAll[w] || 0) : 0;
+                  const oppMarks = isCricketNum ? (oppMarksAll[w] || 0) : 0;
+                  const deadForEveryone = isCricketNum && myMarks >= 3 && oppMarks >= 3;
+                  const bonusOpen = isCricketNum && myMarks >= 3 && !deadForEveryone;
+                  const opponentBonus = isCricketNum && !bonusOpen && oppMarks >= 3 && !deadForEveryone;
+                  const stillOpen = isCricketNum && !bonusOpen && !opponentBonus && !deadForEveryone;
+                  const dim = gameMode === "cricket" && (!isCricketNum || deadForEveryone);
+                  const playerLight = activePlayerIndex === 0 ? "#bae6fd" : "#fecdd3";
+                  const playerDark = activePlayerIndex === 0 ? "#0ea5e9" : "#e11d48";
+                  const opponentLight = activePlayerIndex === 0 ? "#fecdd3" : "#bae6fd";
+                  const opponentDark = activePlayerIndex === 0 ? "#e11d48" : "#0ea5e9";
+                  const baseSingle = ev ? "#09090c" : "#eaeaea";
+                  const baseBand = ev ? "#e11d48" : "#16a34a";
+                  const singleFill = dim ? baseSingle : bonusOpen ? playerLight : opponentBonus ? opponentLight : stillOpen ? "#f5eede" : baseSingle;
+                  const bandFill = dim ? baseBand : bonusOpen ? playerDark : opponentBonus ? opponentDark : stillOpen ? "#facc15" : baseBand;
                   return React.createElement(
                     "g",
                     { key: w },
                     React.createElement("path", {
                       d: bp(112, 154),
-                      fill: ev ? "#09090c" : "#eaeaea",
+                      fill: singleFill,
                       stroke: "#222",
                       strokeWidth: "0.5",
                     }),
                     React.createElement("path", {
                       d: bp(22, 90),
-                      fill: ev ? "#09090c" : "#eaeaea",
+                      fill: singleFill,
                       stroke: "#222",
                       strokeWidth: "0.5",
                     }),
                     React.createElement("path", {
                       d: bp(154, 176),
-                      fill: ev ? "#e11d48" : "#16a34a",
+                      fill: bandFill,
                       stroke: "#222",
                       strokeWidth: "0.5",
                     }),
                     React.createElement("path", {
                       d: bp(90, 112),
-                      fill: ev ? "#e11d48" : "#16a34a",
+                      fill: bandFill,
                       stroke: "#222",
                       strokeWidth: "0.5",
                     }),
+                    // 対象外 or 両者クローズ済み → 暗く沈める
+                    dim && React.createElement("path", { d: bp(22, 176), fill: "#000", opacity: 0.6 }),
+                    // マーク数を3つのドットで表示: P1のみ=青、P2のみ=赤、両方入っていれば紫
+                    isCricketNum && (() => {
+                      const p1mRaw = p1CricketMarks[w] || 0;
+                      const p2mRaw = p2CricketMarks[w] || 0;
+                      const dr = 165;
+                      const dx = dr * Math.cos(ta), dy = dr * Math.sin(ta);
+                      return React.createElement(
+                        "g",
+                        { transform: `translate(${dx},${dy}) rotate(${a + 90})` },
+                        [0, 1, 2].map((di) => {
+                          const p1has = p1mRaw > di;
+                          const p2has = p2mRaw > di;
+                          const fill = p1has && p2has ? "#a855f7" : p1has ? "#38bdf8" : p2has ? "#fb7185" : "rgba(0,0,0,0.3)";
+                          return React.createElement("circle", {
+                            key: di,
+                            cx: (di - 1) * 10,
+                            cy: 0,
+                            r: 4.5,
+                            fill,
+                            stroke: "#111",
+                            strokeWidth: 1,
+                          });
+                        }),
+                      );
+                    })(),
                     React.createElement(
                       "text",
                       {
@@ -2710,7 +3072,7 @@
                         y: ty,
                         textAnchor: "middle",
                         dominantBaseline: "central",
-                        fill: "#f59e0b",
+                        fill: dim ? "#52525b" : (bonusOpen || opponentBonus || stillOpen) ? "#292418" : "#f59e0b",
                         fontSize: "13",
                         fontWeight: "900",
                         transform: `rotate(${a + 90},${tx},${ty})`,
@@ -2719,18 +3081,59 @@
                     ),
                   );
                 }),
-                React.createElement("circle", {
-                  r: "22",
-                  fill: "#16a34a",
-                  stroke: "#222",
-                  strokeWidth: "0.5",
-                }),
-                React.createElement("circle", {
-                  r: "8.5",
-                  fill: "#e11d48",
-                  stroke: "#222",
-                  strokeWidth: "0.5",
-                }),
+                (() => {
+                  const myMarksAll = activePlayerIndex === 0 ? p1CricketMarks : p2CricketMarks;
+                  const oppMarksAll = activePlayerIndex === 0 ? p2CricketMarks : p1CricketMarks;
+                  const bullMyMarks = gameMode === "cricket" ? (myMarksAll[25] || 0) : 0;
+                  const bullOppMarks = gameMode === "cricket" ? (oppMarksAll[25] || 0) : 0;
+                  const bullDead = gameMode === "cricket" && bullMyMarks >= 3 && bullOppMarks >= 3;
+                  const bullBonusOpen = gameMode === "cricket" && bullMyMarks >= 3 && !bullDead;
+                  const bullOpponentBonus = gameMode === "cricket" && !bullBonusOpen && bullOppMarks >= 3 && !bullDead;
+                  const bullStillOpen = gameMode === "cricket" && !bullBonusOpen && !bullOpponentBonus && !bullDead;
+                  const playerLight = activePlayerIndex === 0 ? "#bae6fd" : "#fecdd3";
+                  const playerDark = activePlayerIndex === 0 ? "#0ea5e9" : "#e11d48";
+                  const opponentLight = activePlayerIndex === 0 ? "#fecdd3" : "#bae6fd";
+                  const opponentDark = activePlayerIndex === 0 ? "#e11d48" : "#0ea5e9";
+                  return React.createElement(
+                    "g",
+                    null,
+                    React.createElement("circle", {
+                      r: "22",
+                      fill: bullBonusOpen ? playerLight : bullOpponentBonus ? opponentLight : bullStillOpen ? "#f5eede" : "#16a34a",
+                      stroke: "#222",
+                      strokeWidth: "0.5",
+                    }),
+                    React.createElement("circle", {
+                      r: "8.5",
+                      fill: bullBonusOpen ? playerDark : bullOpponentBonus ? opponentDark : bullStillOpen ? "#facc15" : "#e11d48",
+                      stroke: "#222",
+                      strokeWidth: "0.5",
+                    }),
+                    bullDead && React.createElement("circle", { r: 22, fill: "#000", opacity: 0.6 }),
+                    gameMode === "cricket" && (() => {
+                      const p1mRaw = p1CricketMarks[25] || 0;
+                      const p2mRaw = p2CricketMarks[25] || 0;
+                      return React.createElement(
+                        "g",
+                        { transform: "translate(0,34)" },
+                        [0, 1, 2].map((di) => {
+                          const p1has = p1mRaw > di;
+                          const p2has = p2mRaw > di;
+                          const fill = p1has && p2has ? "#a855f7" : p1has ? "#38bdf8" : p2has ? "#fb7185" : "rgba(0,0,0,0.3)";
+                          return React.createElement("circle", {
+                            key: di,
+                            cx: (di - 1) * 10,
+                            cy: 0,
+                            r: 4.5,
+                            fill,
+                            stroke: "#111",
+                            strokeWidth: 1,
+                          });
+                        }),
+                      );
+                    })(),
+                  );
+                })(),
                 /* ダーツマーカー: アクティブ投を大きく、完了投を小さく表示 */
                 currentThrows.map((t, idx) => {
                   const isFocused = idx === editingThrowIndex;
@@ -2883,7 +3286,7 @@
                   className:
                     "text-[7px] text-zinc-500 block uppercase font-bold tracking-wider leading-none mb-0.5",
                 },
-                gameMode === "countup" ? "Round Pts" : "Round Sum",
+                gameMode === "countup" || gameMode === "cricket" ? "Round Pts" : "Round Sum",
               ),
               React.createElement(
                 "span",
@@ -2965,7 +3368,7 @@
                       ),
                     ),
                   ),
-                  React.createElement(
+                  gameMode !== "cricket" && React.createElement(
                     "div",
                     {
                       className:
@@ -3210,10 +3613,11 @@
                 ),
                 React.createElement(
                   "div",
-                  { className: "grid grid-cols-2 gap-2" },
+                  { className: "grid grid-cols-3 gap-2" },
                   [
                     ["01", "01 GAME", "🎯"],
                     ["countup", "COUNT-UP", "📈"],
+                    ["cricket", "CRICKET", "🏏"],
                   ].map(([m, lbl, ico]) =>
                     React.createElement(
                       "button",
@@ -3578,7 +3982,7 @@
             React.createElement(
               "span",
               { className: "text-5xl block animate-bounce" },
-              winner.isDraw ? "🤝" : winner.countUpResult ? "🏆" : "👑",
+              winner.isDraw ? "🤝" : (winner.countUpResult || winner.cricketResult) ? "🏆" : "👑",
             ),
             React.createElement(
               "h2",
@@ -3588,7 +3992,7 @@
               },
               winner.isDraw ? "DRAW!" : winner.name + " WINS!",
             ),
-            winner.countUpResult
+            (winner.countUpResult || winner.cricketResult)
               ? (() => {
                   const sortedScores = (winner.scores || [])
                     .slice()
