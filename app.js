@@ -10,7 +10,7 @@
   const MAX_THROWS_PER_TURN = 3;
   const COUNT_UP_ROUNDS = 8;
   const LOCAL_STORAGE_KEY = "pub_darts_cabin_state_v5";
-  const CURRENT_SAVE_VERSION = 7; // セーブデータ構造のバージョン。上げたら migrateSaveData に変換処理を追加。
+  const CURRENT_SAVE_VERSION = 8; // セーブデータ構造のバージョン。上げたら migrateSaveData に変換処理を追加。
 
   // ─────────────────────────────────────────────────────────────────────────
   // ARRANGE_TABLE: 2～170点の標準チェックアウトルート
@@ -354,6 +354,20 @@
 
   const makeEmptyCricketMarks = () =>
     CRICKET_TARGETS.reduce((acc, k) => ({ ...acc, [k]: 0 }), {});
+
+  // ハンディキャップ: 指定本数ぶんのマークを CRICKET_TARGETS の順（20→19→…→15→Bull）で
+  // 1ナンバー最大3マークまで積みながら埋めていく。得点は一切付与しない（マークのみの頭出し）。
+  const makeHandicapCricketMarks = (handicapCount) => {
+    const marks = makeEmptyCricketMarks();
+    let remaining = Math.max(0, handicapCount || 0);
+    for (const t of CRICKET_TARGETS) {
+      if (remaining <= 0) break;
+      const give = Math.min(3, remaining);
+      marks[t] = give;
+      remaining -= give;
+    }
+    return marks;
+  };
 
   const getThrowFromCoords = (x, y, bullType) => {
     const r = Math.sqrt(x * x + y * y);
@@ -1579,7 +1593,9 @@
     const [checkoutPref, setCheckoutPref] = useState("double");
     const [bullType, setBullType] = useState("separate");
     const [cuRounds, setCuRounds] = useState(COUNT_UP_ROUNDS);
-    const [o1MaxRounds, setO1MaxRounds] = useState(null); // null = ∞
+    const [maxRounds, setMaxRounds] = useState(null); // null = ∞
+    const [p1Handicap, setP1Handicap] = useState(0); // クリケット専用: 開始時の頭出しマーク数(0-21)
+    const [p2Handicap, setP2Handicap] = useState(0);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [showHowTo, setShowHowTo] = useState(false);
     const [showSettingsSetup, setShowSettingsSetup] = useState(true);
@@ -1593,14 +1609,15 @@
     // 01ゲーム: remainingScore を使用
     // Count-Up: accumulatedScore を使用
     // Cricket: cricketMarks(ナンバーごとのマーク数) / cricketScore を使用
-    const makePlayer = (id, name, startScore) => ({
+    const makePlayer = (id, name, startScore, handicapMarks, handicapCount) => ({
       id,
       name,
       initialScore: startScore,
       remainingScore: startScore,
       accumulatedScore: 0,
-      cricketMarks: makeEmptyCricketMarks(),
+      cricketMarks: handicapMarks || makeEmptyCricketMarks(),
       cricketScore: 0,
+      cricketHandicap: handicapCount || 0, // セットアップ画面復元用（原則7: 派生値ではなく設定値そのものを保持）
       history: [],
     });
 
@@ -1629,7 +1646,7 @@
     const cuRoundsRef = useRef(COUNT_UP_ROUNDS);
     const cpuDifficultyRef = useRef("medium");
     const playerCountRef = useRef(2);
-    const o1MaxRoundsRef = useRef(null);
+    const maxRoundsRef = useRef(null);
 
     const activePlayer = players[activePlayerIndex];
 
@@ -1642,7 +1659,7 @@
     cuRoundsRef.current = cuRounds;
     cpuDifficultyRef.current = cpuDifficulty;
     playerCountRef.current = playerCount;
-    o1MaxRoundsRef.current = o1MaxRounds;
+    maxRoundsRef.current = maxRounds;
     winnerRef.current = winner; // winner の最新値をrefに同期
 
     const setCurrentThrowsImmediate = (nextThrows) => {
@@ -1892,7 +1909,21 @@
             setConfirmStage("gameover"); playSound("victory");
             setWinner({ ...mp[idx], cricketResult: true, isDraw: false, scores: (pc === 1 ? [mp[idx]] : mp).map(pp => ({ name: pp.name, score: pp.cricketScore })) });
           } else {
-            playSound("click"); setCurrentThrowsImmediate([]); setActivePlayerIndex(0); setConfirmStage("throwing");
+            // CPUターン終了後のラウンド上限チェック（winnerRefで二重ゲームオーバー防止。CPU(idx=1)は常にラストプレイヤー）
+            if (winnerRef.current) return;
+            const crMax = maxRoundsRef.current;
+            const nextRoundNum = mp[idx].history.length;
+            if (crMax !== null && nextRoundNum >= crMax) {
+              const relevant = pc === 1 ? [mp[0]] : mp.slice(0, 2);
+              const maxScore = Math.max(...relevant.map(pp => pp.cricketScore));
+              const winners = relevant.filter(pp => pp.cricketScore === maxScore);
+              const isDraw = winners.length > 1;
+              const w = isDraw ? { ...winners[0], id: null } : winners[0];
+              setConfirmStage("gameover"); playSound("victory");
+              setWinner({ ...w, cricketResult: true, isDraw, scores: relevant.map(pp => ({ name: pp.name, score: pp.cricketScore })) });
+            } else {
+              playSound("click"); setCurrentThrowsImmediate([]); setActivePlayerIndex(0); setConfirmStage("throwing");
+            }
           }
         } else {
           const freshState = getRoundState(pl.remainingScore, cpuThrows, om);
@@ -1905,10 +1936,10 @@
           } else {
             // CPUターン終了後のラウンド上限チェック（winnerRefで二重ゲームオーバー防止）
             if (winnerRef.current) return;
-            const o1Max = o1MaxRoundsRef.current;
+            const o1MaxR = maxRoundsRef.current;
             const nextRoundNum = mp[idx].history.length;
             // CPU(idx=1)は常にラストプレイヤー
-            if (o1Max !== null && nextRoundNum >= o1Max) {
+            if (o1MaxR !== null && nextRoundNum >= o1MaxR) {
               const relevant = pc === 1 ? [mp[0]] : mp.slice(0, 2);
               const minRem = Math.min(...relevant.map(pp => pp.remainingScore));
               const winners = relevant.filter(pp => pp.remainingScore === minRem);
@@ -1955,7 +1986,7 @@
               winner,
               checkoutPref,
               cuRounds,
-              o1MaxRounds,
+              maxRounds,
               playerCount,
               cpuMode,
               cpuDifficulty,
@@ -1981,7 +2012,7 @@
       winner,
       checkoutPref,
       cuRounds,
-      o1MaxRounds,
+      maxRounds,
       playerCount,
       cpuMode,
       cpuDifficulty,
@@ -2130,6 +2161,42 @@
       } catch (e) {}
     };
 
+    // ── クイックスタート ──
+    // 「とりあえず501 Double Outで2人対戦を始める」ワンタップ導線。
+    // handleStartGameはgameMode/p1StartScore等を現在のstateから読むため、
+    // 同一ハンドラ内でsetGameMode→handleStartGameのように呼ぶとstateが古いまま参照されてしまう。
+    // そのため値を直接埋め込んだ専用関数として独立させている（意図的な重複。責務の境界を優先）。
+    const handleQuickStart = () => {
+      cancelCpuTimer();
+      playSound("revert");
+      clearSavedGame();
+      setGameMode("01");
+      setOutMode("double");
+      setCheckoutPref("double");
+      setBullType("separate");
+      setMaxRounds(null);
+      setPlayerCount(2);
+      setCpuMode(false);
+      setP1StartScore(501);
+      setP2StartScore(501);
+      setPlayers([
+        makePlayer("p1", players[0].name.trim() || "PLAYER 1", 501),
+        makePlayer("p2", (playerCount >= 2 && players[1] && players[1].name.trim()) || "PLAYER 2", 501),
+      ]);
+      winnerRef.current = null;
+      setActivePlayerIndex(0);
+      setCurrentThrowsImmediate([]);
+      setEditingThrowIndex(null);
+      setPadMultiplier(1);
+      setTurnHistoryState([]);
+      setWinner(null);
+      setShowQuitConfirm(false);
+      setShowExitConfirm(false);
+      setShowSettingsSetup(false);
+      setConfirmStage("throwing");
+      setUndoConfirmStage("idle");
+    };
+
     // ── ゲーム開始 ──
     const handleStartGame = (showSetup = false) => {
       cancelCpuTimer();
@@ -2139,8 +2206,8 @@
       const cpuLabel = `CPU (${cpuDifficulty.toUpperCase()})`;
       const p2Name = cpuMode ? cpuLabel : (playerCount === 1 ? "---" : (players[1].name.trim() || "PLAYER 2"));
       setPlayers([
-        makePlayer("p1", players[0].name.trim() || "PLAYER 1", p1StartScore),
-        makePlayer("p2", p2Name, p2StartScore),
+        makePlayer("p1", players[0].name.trim() || "PLAYER 1", p1StartScore, gameMode === "cricket" ? makeHandicapCricketMarks(p1Handicap) : undefined, gameMode === "cricket" ? p1Handicap : 0),
+        makePlayer("p2", p2Name, p2StartScore, gameMode === "cricket" ? makeHandicapCricketMarks(p2Handicap) : undefined, gameMode === "cricket" ? p2Handicap : 0),
       ]);
       winnerRef.current = null; // winnerRefを即時リセット（CPUuseEffect誤発火防止）
       setActivePlayerIndex(0);
@@ -2338,6 +2405,9 @@
         initAudio();
         const snap = { players: cloneDeep(players), activePlayerIndex };
         setTurnHistoryState((p) => [...p, snap].slice(-20));
+        // maxRounds上限判定は「全員が同ラウンド数を打ち終えた後」にのみ行うため、
+        // ラストプレイヤーのターンかどうかを01/クリケット共通で先に確定しておく。
+        const isLastPlayer = playerCount === 1 || activePlayerIndex === (playerCount - 1);
 
         if (gameMode === "countup") {
           // Count-Up: 累積加算（このブロックは必ず1回だけ実行）
@@ -2432,8 +2502,29 @@
               })),
             });
           } else {
-            playSound("click");
-            setConfirmStage("next");
+            // ラウンド上限チェック（maxRounds が設定されている場合。01と同じ上限設定を共有）
+            const nextRoundNum = mp[activePlayerIndex].history.length;
+            if (maxRounds !== null && isLastPlayer && nextRoundNum >= maxRounds) {
+              // 全プレイヤーが規定ラウンドを終えた → クリケット得点が高い方が勝ち
+              const relevant = playerCount === 1 ? [mp[0]] : mp.slice(0, 2);
+              const maxScore = Math.max(...relevant.map((p) => p.cricketScore));
+              const winners = relevant.filter((p) => p.cricketScore === maxScore);
+              const isDraw = winners.length > 1;
+              const w = isDraw ? { ...winners[0], id: null } : winners[0];
+              setConfirmStage("gameover");
+              setCurrentThrowsImmediate([]);
+              setEditingThrowIndex(null);
+              playSound("victory");
+              setWinner({
+                ...w,
+                cricketResult: true,
+                isDraw,
+                scores: relevant.map((p) => ({ name: p.name, score: p.cricketScore })),
+              });
+            } else {
+              playSound("click");
+              setConfirmStage("next");
+            }
           }
         } else {
           // 01ゲーム: useMemoのroundStateに依存せず、currentThrowsから直接計算
@@ -2463,10 +2554,9 @@
             playSound("victory");
             setWinner(mp[activePlayerIndex]);
           } else {
-            // ラウンド上限チェック（o1MaxRounds が設定されている場合）
+            // ラウンド上限チェック（maxRounds が設定されている場合）
             const nextRoundNum = mp[activePlayerIndex].history.length; // 今追加したラウンド数
-            const isLastPlayer = playerCount === 1 || activePlayerIndex === (playerCount - 1);
-            if (o1MaxRounds !== null && isLastPlayer && nextRoundNum >= o1MaxRounds) {
+            if (maxRounds !== null && isLastPlayer && nextRoundNum >= maxRounds) {
               // 全プレイヤーが規定ラウンドを終えた → 残り点数が少ない方が勝ち
               const relevant = playerCount === 1 ? [mp[0]] : mp.slice(0, 2);
               const minRem = Math.min(...relevant.map(p => p.remainingScore));
@@ -2528,6 +2618,13 @@
           // 旧バージョン: 現状は構造変更なしなのでそのまま通す。
           // v7でgameMode="cricket"とplayer.cricketMarks/cricketScoreを追加したが、
           // どちらも「無ければ未使用として扱われるだけ」の追加フィールドなので変換不要。
+          // falls through
+        case 7:
+          // v7→v8: o1MaxRounds を maxRounds にリネーム。
+          // クリケットにも同じラウンド上限設定を適用できるよう、01専用の名前を汎用化した。
+          if (save.o1MaxRounds !== undefined && save.maxRounds === undefined) {
+            save.maxRounds = save.o1MaxRounds;
+          }
           break;
         default:
           break;
@@ -2585,7 +2682,7 @@
         setWinner(d.winner ?? null);
         setCheckoutPref(["double", "triple", "single"].includes(d.checkoutPref) ? d.checkoutPref : "double");
         setCuRounds(d.cuRounds ?? COUNT_UP_ROUNDS);
-        setO1MaxRounds(d.o1MaxRounds ?? null);
+        setMaxRounds(d.maxRounds ?? null);
         setPlayerCount(d.playerCount ?? 2);
         setCpuMode(!!d.cpuMode);
         const safeDiff = ["easy","medium","hard","pro"].includes(d.cpuDifficulty) ? d.cpuDifficulty : "medium";
@@ -2596,6 +2693,8 @@
         if (d.players && d.players[0] && d.players[1]) {
           setP1StartScore(d.players[0].initialScore);
           setP2StartScore(d.players[1].initialScore);
+          setP1Handicap(d.players[0].cricketHandicap ?? 0);
+          setP2Handicap(d.players[1].cricketHandicap ?? 0);
         }
         setHasRestorableSave(true);
         setShowSettingsSetup(false);
@@ -2630,8 +2729,8 @@
           ? "---"
           : players[1].name.trim() || "PLAYER 2";
       setPlayers([
-        makePlayer("p1", players[0].name.trim() || "PLAYER 1", p1StartScore),
-        makePlayer("p2", p2Name, p2StartScore),
+        makePlayer("p1", players[0].name.trim() || "PLAYER 1", p1StartScore, gameMode === "cricket" ? makeHandicapCricketMarks(p1Handicap) : undefined, gameMode === "cricket" ? p1Handicap : 0),
+        makePlayer("p2", p2Name, p2StartScore, gameMode === "cricket" ? makeHandicapCricketMarks(p2Handicap) : undefined, gameMode === "cricket" ? p2Handicap : 0),
       ]);
       winnerRef.current = null;
       setActivePlayerIndex(0);
@@ -3602,6 +3701,29 @@
                   "p-5 space-y-5 overflow-y-auto max-h-[75vh] no-scrollbar",
               },
 
+              /* ── QUICK START（初見向け・進行中の対戦がない時だけ表示） ── */
+              players[0].history.length === 0 &&
+                !(playerCount >= 2 && players[1] && players[1].history.length > 0) &&
+                React.createElement(
+                  "button",
+                  {
+                    onClick: handleQuickStart,
+                    className:
+                      "w-full py-3 rounded-2xl bg-gradient-to-r from-zinc-900 to-zinc-900/60 border border-amber-500/30 flex items-center justify-center gap-2 cursor-pointer hover:border-amber-500/60 transition group",
+                  },
+                  React.createElement("span", { className: "text-base" }, "⚡"),
+                  React.createElement(
+                    "span",
+                    { className: "text-[11px] font-black tracking-wider text-amber-300 uppercase" },
+                    "クイックスタート",
+                  ),
+                  React.createElement(
+                    "span",
+                    { className: "text-[9px] text-zinc-500 font-bold" },
+                    "(501 Double Out・2人)",
+                  ),
+                ),
+
               /* ── GAME MODE ── */
               React.createElement(
                 "div",
@@ -3681,6 +3803,36 @@
                           className: "setup-score-btn flex-1",
                         }, "＋"),
                       ),
+                      gameMode === "cricket" && (() => {
+                        const hcp = i===0 ? p1Handicap : p2Handicap;
+                        const setHcp = i===0 ? setP1Handicap : setP2Handicap;
+                        // プレビュー: どのナンバーに何マークずつ入るか（20→19→…→15→Bull の順）
+                        const preview = (() => {
+                          let remaining = hcp, parts = [];
+                          for (const t of CRICKET_TARGETS) {
+                            if (remaining <= 0) break;
+                            const g = Math.min(3, remaining);
+                            parts.push(`${t === 25 ? "BULL" : t}×${g}`);
+                            remaining -= g;
+                          }
+                          return parts.join(" ");
+                        })();
+                        return React.createElement("div", { className: "space-y-1" },
+                          React.createElement("div", { className: "flex items-center justify-between gap-1.5" },
+                            React.createElement("button", {
+                              onClick: () => { playSound("click"); setHcp(h => Math.max(0, h - 1)); },
+                              className: "setup-score-btn flex-1",
+                            }, "－"),
+                            React.createElement("span", { className: "text-lg font-black font-mono text-white tabular-nums w-16 text-center" },
+                              `HCP ${hcp}`),
+                            React.createElement("button", {
+                              onClick: () => { playSound("click"); setHcp(h => Math.min(21, h + 1)); },
+                              className: "setup-score-btn flex-1",
+                            }, "＋"),
+                          ),
+                          hcp > 0 && React.createElement("p", { className: "text-[8px] text-zinc-600 font-bold tracking-wide text-center truncate" }, preview),
+                        );
+                      })(),
                     )
                   ),
                 ),
@@ -3728,15 +3880,15 @@
                 ),
               ),
 
-              /* ── 01専用: ラウンド上限 ── */
-              gameMode === "01" && React.createElement("div", { className: "space-y-1.5" },
+              /* ── 01・クリケット共通: ラウンド上限 ── */
+              (gameMode === "01" || gameMode === "cricket") && React.createElement("div", { className: "space-y-1.5" },
                 React.createElement("p", { className: "setup-section-label" }, "MAX ROUNDS"),
                 React.createElement("div", { className: "grid grid-cols-4 gap-2" },
                   [[10,"10"],[15,"15"],[20,"20"],[null,"∞"]].map(([r,lbl]) =>
                     React.createElement("button", {
                       key: String(r),
-                      onClick: () => { playSound("click"); setO1MaxRounds(r); },
-                      className: `setup-toggle-btn ${o1MaxRounds===r?"setup-toggle-active":"setup-toggle-inactive"}`,
+                      onClick: () => { playSound("click"); setMaxRounds(r); },
+                      className: `setup-toggle-btn ${maxRounds===r?"setup-toggle-active":"setup-toggle-inactive"}`,
                     }, lbl)
                   ),
                 ),
