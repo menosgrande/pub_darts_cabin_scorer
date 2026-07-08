@@ -38,18 +38,23 @@
 
 ## 技術スタック
 
-- React 18（UMD / CDNビルド、ビルドステップなし）
+- React 18（UMD ビルドをローカル同梱、ビルドステップなし）
 - Vanilla JavaScript + Tailwind CSS
 - LocalStorage による対戦状態の自動保存・復元
-- 依存パッケージなし・サーバー不要（`index.html` を静的配信するだけ）
+- PWA対応（manifest + Service Worker、ホーム画面追加・オフライン起動可）
+- 外部CDN依存なし・依存パッケージなし・サーバー不要（フォルダごと静的配信するだけ）
 
 ## ファイル構成
 
 ```
-index.html   エントリーポイント
+index.html   エントリーポイント（PWA対応: manifest/SW登録込み）
 app.js       アプリ本体（React, ゲームロジック, UI）
 style.css    カスタムスタイル（Fliqlo風フリップ表示など）
 tailwind.css Tailwind CSS
+manifest.json PWA用マニフェスト（ホーム画面追加・standalone表示）
+sw.js        Service Worker（オフラインキャッシュ。更新時はCACHE_VERSIONを上げる）
+icons/       PWAアイコン（192/512/512maskable/apple-touch-icon）
+vendor/      React 18 UMDビルドをローカル同梱（CDN非依存・完全オフライン対応）
 STATE_MANAGEMENT.md  状態管理の設計原則・リファレンス
 ```
 
