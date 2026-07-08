@@ -55,6 +55,10 @@
 | `cpuDifficulty` | `string` | `"medium"` | ✅ | ✅ `cpuDifficultyRef` | ❌ |
 | `p1StartScore` | `number` | `501` | ✅（players経由） | ❌ | ❌ |
 | `p2StartScore` | `number` | `501` | ✅（players経由） | ❌ | ❌ |
+| `p1Handicap` | `number` | `0` | ✅（players.cricketHandicap経由） | ❌ | ❌ |
+| `p2Handicap` | `number` | `0` | ✅（players.cricketHandicap経由） | ❌ | ❌ |
+
+> **クリケットのハンディキャップ**: `makeHandicapCricketMarks(handicapCount)` が `CRICKET_TARGETS`（20→19→…→15→Bull）の順に1ナンバー最大3マークまで頭出しマークを積む。得点は一切付与しない（マークのみのハンデ）。`players[].cricketHandicap` に設定値そのものを保持しておき、セーブ復元時は `p1StartScore`/`p2StartScore` と同じパターンで `players[].initialScore` ならぬ `players[].cricketHandicap` から復元する。
 | `outMode` | `string` | `"single"` | ✅ | ✅ `outModeRef` | ❌ |
 | `checkoutPref` | `string` | `"double"` | ✅ | ❌ | ❌ |
 | `bullType` | `string` | `"separate"` | ✅ | ✅ `bullTypeRef` | ❌ |
