@@ -59,7 +59,7 @@
 | `checkoutPref` | `string` | `"double"` | ✅ | ❌ | ❌ |
 | `bullType` | `string` | `"separate"` | ✅ | ✅ `bullTypeRef` | ❌ |
 | `cuRounds` | `number` | `8` | ✅ | ✅ `cuRoundsRef` | ❌ |
-| `o1MaxRounds` | `number\|null` | `null` | ✅ | ✅ `o1MaxRoundsRef` | ❌ |
+| `maxRounds` | `number\|null` | `null` | ✅ | ✅ `maxRoundsRef` | ❌ |
 | `helpLang` | `"ja"\|"en"` | `"ja"` | ✅ | ❌ | ❌ |
 | `soundEnabled` | `boolean` | `true` | ❌ | ❌ | ❌ |
 
@@ -184,7 +184,7 @@ PREV復元後の `confirmStage` は常に `setConfirmStage("throwing")` で固�
 | `cuRoundsRef` | `cuRounds` | CountUp終了判定 |
 | `cpuDifficultyRef` | `cpuDifficulty` | CPUの精度 |
 | `playerCountRef` | `playerCount` | 1P/2P終了判定 |
-| `o1MaxRoundsRef` | `o1MaxRounds` | 01ラウンド上限判定 |
+| `maxRoundsRef` | `maxRounds` | 01/クリケット共通のラウンド上限判定 |
 | `winnerRef` | `winner` | 二重ゲームオーバー防止 |
 | `currentThrowsRef` | `currentThrows` | OK確定時の最新投擲取得 |
 
@@ -217,7 +217,7 @@ PREV復元後の `confirmStage` は常に `setConfirmStage("throwing")` で固�
 - `number` → `d.field ?? defaultNumber`
 - `null許容` → `d.field ?? null`
 
-**`||` は `0` / `false` / `""` を意図せず潰す。** 例えば `o1MaxRounds` が `0`（あり得るなら）を意味のある値として保存していた場合、`d.o1MaxRounds || null` は `0` を `null` に変えてしまう。`??` は `null`/`undefined` のときだけフォールバックするので安全。
+**`||` は `0` / `false` / `""` を意図せず潰す。** 例えば `maxRounds` が `0`（あり得るなら）を意味のある値として保存していた場合、`d.maxRounds || null` は `0` を `null` に変えてしまう。`??` は `null`/`undefined` のときだけフォールバックするので安全。
 
 > 既存コードに `||` が残っている箇所は、影響範囲を確認しながら段階的に `??` へ置き換えていく。新規追加分は最初から `??` で統一する。
 
@@ -283,6 +283,8 @@ const CPU_DIFFICULTY = {
 現在は中身が空（変換不要）。次回 `version` を上げるときは:
 1. `CURRENT_SAVE_VERSION` を増やす
 2. `switch (v)` 内に旧バージョンからの変換処理を追加
+
+**実例（v7→v8）**: `o1MaxRounds` を `maxRounds` にリネームし、クリケットにも同じラウンド上限を適用できるよう汎用化した。`case 7` で `save.o1MaxRounds` を `save.maxRounds` にコピーするフィールドリネーム変換を追加（`case 6` からのフォールスルーで、v0〜v7のどのセーブも通過する）。
 3. 新規追加フィールドは `handleRestoreSave` のデフォルト値補完と二重管理にならないよう、極力 `migrateSaveData` 側に寄せる
 
 **未来バージョンを読んだ場合の方針（実装済み）**
