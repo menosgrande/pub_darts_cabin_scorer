@@ -1829,6 +1829,50 @@
           )
         : { marks: activePlayer.cricketMarks, score: activePlayer.cricketScore, pointsThisTurn: 0 };
 
+    useEffect(() => {
+      const normalizeViewportContent = (content) => {
+        const parts = String(content || "width=device-width, initial-scale=1.0")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .filter(
+            (part) =>
+              !/^maximum-scale\s*=\s*/i.test(part) &&
+              !/^minimum-scale\s*=\s*/i.test(part) &&
+              !/^user-scalable\s*=\s*/i.test(part),
+          );
+        if (!parts.some((part) => /^initial-scale\s*=\s*/i.test(part))) {
+          parts.push("initial-scale=1.0");
+        }
+        parts.push("maximum-scale=5.0", "user-scalable=yes");
+        return parts.join(", ");
+      };
+
+      let viewportMeta = document.querySelector('meta[name="viewport"]');
+      const previousContent = viewportMeta ? viewportMeta.getAttribute("content") : null;
+      const created = !viewportMeta;
+
+      if (!viewportMeta) {
+        viewportMeta = document.createElement("meta");
+        viewportMeta.setAttribute("name", "viewport");
+        document.head.appendChild(viewportMeta);
+      }
+
+      viewportMeta.setAttribute(
+        "content",
+        normalizeViewportContent(previousContent),
+      );
+
+      return () => {
+        if (!viewportMeta) return;
+        if (created) {
+          viewportMeta.remove();
+        } else if (previousContent !== null) {
+          viewportMeta.setAttribute("content", previousContent);
+        }
+      };
+    }, []);
+
     const committedRoundNode =
       (gameMode === "01" || gameMode === "cricket") &&
       confirmStage === "next" &&
@@ -3177,27 +3221,36 @@
                   ref: boardRef,
                   onClick: handleBoardClick,
                   onTouchStart: (e) => {
-                    // 2本指以上（ピンチズームの開始）ならこのジェスチャー全体をタップ扱いしない
-                    if (e.touches.length > 1) isMultiTouchRef.current = true;
+                    // 2本指以上は盤面タップではなくピンチ操作として扱う
+                    if (e.touches.length > 1) {
+                      isMultiTouchRef.current = true;
+                    }
                   },
                   onTouchMove: (e) => {
-                    // タップ開始後に2本目の指が触れてもピンチ扱いにする（片手の指が後から追加されるケース）
-                    if (e.touches.length > 1) isMultiTouchRef.current = true;
+                    // 操作中に2本指になった場合もピンチ扱いへ昇格
+                    if (e.touches.length > 1) {
+                      isMultiTouchRef.current = true;
+                    }
                   },
                   onTouchEnd: (e) => {
-                    e.preventDefault();
-                    // まだ他の指が盤面に触れている、またはこのジェスチャーがピンチだった場合は
-                    // 投擲として扱わない（ピンチズーム解除時に点数が誤って入るのを防ぐ）
-                    if (e.touches.length > 0 || isMultiTouchRef.current) {
+                    const wasMultiTouch = isMultiTouchRef.current;
+                    // ピンチ中 / 他の指がまだ残っている間はブラウザ既定動作を止めない
+                    if (e.touches.length > 0 || wasMultiTouch) {
                       if (e.touches.length === 0) isMultiTouchRef.current = false;
                       return;
                     }
+                    // 単指タップだけスコア入力として扱う
+                    e.preventDefault();
+                    isMultiTouchRef.current = false;
                     handleBoardClick(e);
+                  },
+                  onTouchCancel: () => {
+                    isMultiTouchRef.current = false;
                   },
                   viewBox: "-210 -210 420 420",
                   className:
                     "w-full h-full drop-shadow-[0_15px_30px_rgba(0,0,0,0.95)] overflow-visible cursor-crosshair",
-                  style: { touchAction: "pan-y" },
+                  style: { touchAction: "pinch-zoom" },
                 },
                 React.createElement(
                   "defs",
