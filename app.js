@@ -2395,17 +2395,24 @@
     };
 
     const handleUndoCommittedTurn = () => {
-      cancelCpuTimer();
       if (turnHistoryState.length === 0) return;
       // gameover中（winner表示中）はPREV不可
       if (confirmStage === "gameover") return;
       // confirmStage==='next'(OK押し後)なら確認なしで即復元
       // confirmStage==='throwing' なら2段階確認（誤タップ防止）
       if (confirmStage !== "next" && undoConfirmStage === "idle") {
+        // ここではまだ「確認待ち」に入るだけで実際には何も戻さない。
+        // 以前はここで無条件に cancelCpuTimer() していたため、
+        // CPU思考中にPREVを1回タップしただけ（confirmを押さず放置）でも
+        // CPUのタイマーが握り潰され、CPUのターンが二度と進まなくなるバグがあった
+        // （isCpuTurnがtrue→trueのまま変化しないため、useEffectが再発火せず復帰不能）。
+        // 実際に巻き戻す（=CPUのターンを本当に無効化する）ことが確定してから
+        // cancelCpuTimer() を呼ぶようにする。
         playSound("click");
         setUndoConfirmStage("confirm");
         return;
       }
+      cancelCpuTimer();
       playSound("revert");
       const prev = turnHistoryState[turnHistoryState.length - 1];
       setPlayers(prev.players);
