@@ -1621,6 +1621,28 @@
       history: [],
     });
 
+    // 壊れた/古い形式のセーブデータからプレイヤーを復元する際、欠損フィールドを安全なデフォルトで
+    // 埋める。localStorageの手動編集や旧バージョンのデータでフィールドが欠けていても、
+    // 後段のgetCricketRoundState等が undefined参照でクラッシュしないようにするための防御。
+    const sanitizeRestoredPlayer = (p, id, fallbackName) => {
+      if (!p || typeof p !== "object") return makePlayer(id, fallbackName, 501);
+      const initialScore = Number.isFinite(p.initialScore) ? p.initialScore : 501;
+      return {
+        id: typeof p.id === "string" ? p.id : id,
+        name: typeof p.name === "string" ? p.name : fallbackName,
+        initialScore,
+        remainingScore: Number.isFinite(p.remainingScore) ? p.remainingScore : initialScore,
+        accumulatedScore: Number.isFinite(p.accumulatedScore) ? p.accumulatedScore : 0,
+        cricketMarks:
+          p.cricketMarks && typeof p.cricketMarks === "object"
+            ? { ...makeEmptyCricketMarks(), ...p.cricketMarks }
+            : makeEmptyCricketMarks(),
+        cricketScore: Number.isFinite(p.cricketScore) ? p.cricketScore : 0,
+        cricketHandicap: Number.isFinite(p.cricketHandicap) ? p.cricketHandicap : 0,
+        history: Array.isArray(p.history) ? p.history : [],
+      };
+    };
+
     const [players, setPlayers] = useState([
       makePlayer("p1", "PLAYER 1", 501),
       makePlayer("p2", "PLAYER 2", 501),
@@ -1681,7 +1703,13 @@
           setHasRestorableSave(false);
           return false;
         }
-        const d = JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        const d = migrateSaveData(parsed);
+        if (!d) {
+          // 未来バージョン等、現行アプリでは復元不能なセーブ → ボタン自体を出さない
+          setHasRestorableSave(false);
+          return false;
+        }
         const ok = Date.now() - (d.savedAt || 0) < 86400000;
         if (!ok) {
           localStorage.removeItem(LOCAL_STORAGE_KEY);
@@ -2635,12 +2663,15 @@
     const handleRestoreSave = () => {
       try {
         const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-        if (!raw) return false;
+        if (!raw) { setHasRestorableSave(false); return false; }
         const parsed = JSON.parse(raw);
         const d = migrateSaveData(parsed);
         if (!d) {
           // 未来バージョン等で復元拒否されたケース。データ自体は消さずに残す
-          // （ユーザーがアプリを更新すれば読めるようになる可能性があるため）。
+          // （ユーザーがアプリを更新すれば読めるようになる可能性があるため）が、
+          // 現行アプリでは復元できないのでボタンは引っ込める（押しても無反応のまま残るのを防ぐ）。
+          setHasRestorableSave(false);
+          playSound("burst");
           return false;
         }
         if (Date.now() - (d.savedAt || 0) > 86400000) {
@@ -2650,7 +2681,10 @@
         const restoredMode = ["01", "countup", "cricket"].includes(d.gameMode) ? d.gameMode : "01";
         const restoredPlayers =
           Array.isArray(d.players) && d.players.length === 2
-            ? d.players
+            ? [
+                sanitizeRestoredPlayer(d.players[0], "p1", "PLAYER 1"),
+                sanitizeRestoredPlayer(d.players[1], "p2", "PLAYER 2"),
+              ]
             : players;
         const restoredIndex = d.activePlayerIndex === 1 ? 1 : 0;
         const restoredThrows = Array.isArray(d.currentThrows)
@@ -2700,6 +2734,10 @@
         setShowSettingsSetup(false);
         return true;
       } catch (e) {
+        // 壊れたJSON・想定外の構造などで例外発生 → セーブデータを削除し、
+        // ボタンが「表示されるが押しても直らない」まま残らないようにする。
+        clearSavedGame();
+        playSound("burst");
         return false;
       }
     };
