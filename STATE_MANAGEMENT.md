@@ -59,6 +59,10 @@
 | `p2Handicap` | `number` | `0` | ✅（players.cricketHandicap経由） | ❌ | ❌ |
 
 > **クリケットのハンディキャップ**: `makeHandicapCricketMarks(handicapCount)` が `CRICKET_TARGETS`（20→19→…→15→Bull）の順に1ナンバー最大3マークまで頭出しマークを積む。得点は一切付与しない（マークのみのハンデ）。`players[].cricketHandicap` に設定値そのものを保持しておき、セーブ復元時は `p1StartScore`/`p2StartScore` と同じパターンで `players[].initialScore` ならぬ `players[].cricketHandicap` から復元する。
+
+> **01のオートハンデ（DARTSLIVE2準拠）**: `autoHandicap01`("off"|"dl2") / `p1Rating` / `p2Rating` はセットアップ画面専用の一時state。`p1StartScore`/`p2StartScore` と同じ設計方針で、ゲーム開始時に `computeAuto01Scores()` がレーティング差から実際の開始点数を算出して `players[].initialScore` に焼き込むだけで、rating自体はセーブ対象に含めない（ゲーム開始後は `initialScore` が唯一のsource of truthで、rating入力は再現不要）。出典は DARTSLIVE公式サポート記事の添付PDF（301/501/701/901/1101/1501 × レーティング差0.5刻み〜8.5以降プラトー）。
+
+> **クリケットのオートハンデ（DARTSLIVE2準拠）**: `autoHandicapCricket`("off"|"dl2") で手動(`p1Handicap`/`p2Handicap`によるマーク数指定)と切り替え。DL2モードは `p1Rating`/`p2Rating`（01と共用）の差から `getDartslive2CricketHandicap(diff)` が `{marks, bonus}` を返す。出典はユーザー提供の画像（レーティング差1〜17の整数のみ、小数点以下切り捨て）: 18→17→16→15の順に1マーク→2マークを積み、diff=8で全4ナンバーが2マーク（3マーク＝完全クローズには到達しない）、diff=9以降はマークが増えずボーナス得点のみ加算される。ボーナス得点は `makePlayer` の第6引数 `initialCricketScore` として `cricketScore` の初期値に反映（`cricketScore: initialCricketScore || 0`）。手動モードとDL2モードは相互排他で、`computeCricketSetup()` が両方のケースを吸収して呼び出し側を単純にしている。20・19・Bullはどちらのハンデ方式でも対象外。
 | `outMode` | `string` | `"single"` | ✅ | ✅ `outModeRef` | ❌ |
 | `checkoutPref` | `string` | `"double"` | ✅ | ❌ | ❌ |
 | `bullType` | `string` | `"separate"` | ✅ | ✅ `bullTypeRef` | ❌ |
