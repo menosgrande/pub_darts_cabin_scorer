@@ -49,7 +49,7 @@
 
 | State | 型 | デフォルト | localStorage保存 | Ref同期 | PREV対象 |
 |-------|----|-----------|-----------------|---------|---------|
-| `gameMode` | `"01"\|"countup"` | `"01"` | ✅ | ✅ `gameModeRef` | ❌ |
+| `gameMode` | `"01"\|"countup"\|"cricket"` | `"01"` | ✅ | ✅ `gameModeRef` | ❌ |
 | `playerCount` | `1\|2` | `2` | ✅ | ✅ `playerCountRef` | ❌ |
 | `cpuMode` | `boolean` | `false` | ✅ | ❌ | ❌ |
 | `cpuDifficulty` | `string` | `"medium"` | ✅ | ✅ `cpuDifficultyRef` | ❌ |
@@ -57,6 +57,10 @@
 | `p2StartScore` | `number` | `501` | ✅（players経由） | ❌ | ❌ |
 | `p1Handicap` | `number` | `0` | ✅（players.cricketHandicap経由） | ❌ | ❌ |
 | `p2Handicap` | `number` | `0` | ✅（players.cricketHandicap経由） | ❌ | ❌ |
+| `autoHandicap01` | `"off"\|"dl2"` | `"off"` | ❌（セットアップ画面専用の一時state） | ❌ | ❌ |
+| `autoHandicapCricket` | `"off"\|"dl2"` | `"off"` | ❌（同上） | ❌ | ❌ |
+| `p1Rating` | `number` | `10` | ❌（同上・01/クリケットで共用） | ❌ | ❌ |
+| `p2Rating` | `number` | `10` | ❌（同上） | ❌ | ❌ |
 
 > **クリケットのハンディキャップ**: `makeHandicapCricketMarks(handicapCount)` が `CRICKET_TARGETS`（20→19→…→15→Bull）の順に1ナンバー最大3マークまで頭出しマークを積む。得点は一切付与しない（マークのみのハンデ）。`players[].cricketHandicap` に設定値そのものを保持しておき、セーブ復元時は `p1StartScore`/`p2StartScore` と同じパターンで `players[].initialScore` ならぬ `players[].cricketHandicap` から復元する。
 
@@ -382,7 +386,37 @@ const [stats, setStats] = useState(...); // ✕ 二重管理の元
 
 ---
 
-## 設計原則まとめ（1行版）
+## 既知のバグと設計上の教訓（再発防止用）
+
+### CPU思考中のPREVがCPUのターンを永久に止める（修正済み）
+
+`handleUndoCommittedTurn`（PREV）は以前、確認ゲート（2段階確認の1回目）より**前**で無条件に `cancelCpuTimer()` を呼んでいた。CPU思考中にPREVを1回タップしただけ（確認せず放置）でもCPUの保留中タイマーが握り潰され、CPUの自動投擲は `useEffect([isCpuTurn])` で動いているため `isCpuTurn` が `true→true` のまま変化しない限り再発火せず、CPUのターンが二度と進まなくなっていた。
+
+**教訓**: 「確認待ち（arm）」と「実行確定」は別のタイミング。副作用のキャンセル（`cancelCpuTimer()`のような不可逆操作）は、必ず「実行が確定した後」に呼ぶこと。確認ダイアログの1タップ目で不可逆な副作用を先に実行してしまう設計は、キャンセルされた場合に取り返しがつかない。
+
+### RESUMEボタンが表示されるのに復元に失敗する（修正済み）
+
+`refreshRestorableSave`（起動時にRESUMEボタンを出すかどうかの判定）が `migrateSaveData` によるバージョンチェックを通していなかった。一方 `handleRestoreSave`（実際の復元処理）は未来バージョンのセーブを拒否する。結果、「ボタンは出るが押しても復元されない」状態が起こり得た。さらに `handleRestoreSave` の失敗パスで `setHasRestorableSave(false)` を呼んでいなかったため、一度失敗するとボタンが**押しても直らないまま永久に残る**バグもあった。
+
+**教訓**: 「表示条件」と「実行条件」は同じ判定ロジックを共有すること。表示条件だけ緩い判定を使うと、「見えるのに動かないボタン」という体感バグを生む。実行が失敗したら、表示状態も必ず追従してリセットする。
+
+### 復元処理には `sanitizeRestoredPlayer` で必ずサニタイズを通す
+
+`handleRestoreSave` は `players` が「配列で長さ2」程度の粗いチェックしかしていなかった。壊れた/手編集された/旧形式のセーブデータでフィールドが欠けていると、後段の `getCricketRoundState` 等が `undefined` 参照でクラッシュしうる。`sanitizeRestoredPlayer(p, id, fallbackName)` が全フィールドを安全なデフォルト値で補完してから `setPlayers` に渡すことで、この種のクラッシュを防いでいる。**新しいフィールドを `Player` オブジェクトに追加したら、`sanitizeRestoredPlayer` にもデフォルト値を追加すること。**
+
+### UI表示専用のプレースホルダー値を実データ（state）に保存しない
+
+1Pモード時の `players[1].name` に、以前は表示用のつもりで文字列 `"---"` をそのまま保存していた。`players[1]` は1Pゲーム中どこにも表示されないため実害はないが、セットアップ画面の名前入力欄が `players[1].name` を直接bindしているため、後で2Pに切り替えると入力欄に `"---"` がそのまま表示されてしまう体感バグになっていた。
+
+**教訓**: 「今は表示されないから」で実データに仮の表示用文字列を書き込むと、後で別画面がその同じstateを参照したときに漏れ出す。表示専用の値は、render時に都度算出するか、最低限「その値がどこか別の場所でも読まれる可能性はないか」を確認してから保存すること。
+
+### クイックスタート（`handleQuickStart`）は `handleStartGame`/`handleLeaveToMenu` と並ぶ第3のゲーム開始経路
+
+3つとも「setStateしてから同一ハンドラ内でhandleStartGameを呼ぶ」ができない（stateの非同期更新のため）という同じ制約を持つため、値を直接埋め込んだ独立関数として重複させている（意図的な重複）。3経路共通で使うロジック（`computeAuto01Scores()` / `computeCricketSetup()`）は関数として切り出し済みなので、**ゲーム開始時の計算ロジックを変更する場合は、この2つの関数だけを直せば3経路すべてに反映される**。`handleQuickStart(mode)` は `playerCount`/`cpuMode`/`cpuDifficulty` を一切上書きしない点が他の2つと異なる（セットアップ画面で選択済みの値をそのまま尊重する設計）。
+
+---
+
+
 
 > **すべての状態遷移は「UI状態」と「履歴状態」を分離して考え、PREVのみが履歴（`turnHistoryState`）を変更する唯一の操作である。**
 
