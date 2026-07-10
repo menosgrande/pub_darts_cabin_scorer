@@ -1731,6 +1731,12 @@
     const [undoConfirmStage, setUndoConfirmStage] = useState("idle");
     const boardRef = useRef(null);
     const isMultiTouchRef = useRef(false);
+    // 盤面ピンチズーム。zoomはCSS transform用の倍率、panはズーム中心からのドラッグ移動量(px)。
+    // タップ→投擲座標の変換(getThrowFromCoords)はgetBoundingClientRect()を都度読むだけなので、
+    // CSS transformで見た目を拡大しても既存の座標変換ロジックはそのまま正しく動く。
+    const [boardZoom, setBoardZoom] = useState(1);
+    const [boardPan, setBoardPan] = useState({ x: 0, y: 0 });
+    const pinchStateRef = useRef(null); // { startDist, startZoom, startMidX, startMidY, startPanX, startPanY }
     const currentThrowsRef = useRef([]);
     const winnerRef = useRef(null);
     // 最新stateをrefで追跡 → useEffect内のクロージャが古い値を掴む問題を防ぐ
@@ -1828,50 +1834,6 @@
             opponentsCricketMarksForActive,
           )
         : { marks: activePlayer.cricketMarks, score: activePlayer.cricketScore, pointsThisTurn: 0 };
-
-    useEffect(() => {
-      const normalizeViewportContent = (content) => {
-        const parts = String(content || "width=device-width, initial-scale=1.0")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-          .filter(
-            (part) =>
-              !/^maximum-scale\s*=\s*/i.test(part) &&
-              !/^minimum-scale\s*=\s*/i.test(part) &&
-              !/^user-scalable\s*=\s*/i.test(part),
-          );
-        if (!parts.some((part) => /^initial-scale\s*=\s*/i.test(part))) {
-          parts.push("initial-scale=1.0");
-        }
-        parts.push("maximum-scale=5.0", "user-scalable=yes");
-        return parts.join(", ");
-      };
-
-      let viewportMeta = document.querySelector('meta[name="viewport"]');
-      const previousContent = viewportMeta ? viewportMeta.getAttribute("content") : null;
-      const created = !viewportMeta;
-
-      if (!viewportMeta) {
-        viewportMeta = document.createElement("meta");
-        viewportMeta.setAttribute("name", "viewport");
-        document.head.appendChild(viewportMeta);
-      }
-
-      viewportMeta.setAttribute(
-        "content",
-        normalizeViewportContent(previousContent),
-      );
-
-      return () => {
-        if (!viewportMeta) return;
-        if (created) {
-          viewportMeta.remove();
-        } else if (previousContent !== null) {
-          viewportMeta.setAttribute("content", previousContent);
-        }
-      };
-    }, []);
 
     const committedRoundNode =
       (gameMode === "01" || gameMode === "cricket") &&
@@ -3221,36 +3183,70 @@
                   ref: boardRef,
                   onClick: handleBoardClick,
                   onTouchStart: (e) => {
-                    // 2本指以上は盤面タップではなくピンチ操作として扱う
-                    if (e.touches.length > 1) {
-                      isMultiTouchRef.current = true;
+                    // 2本指以上（ピンチズームの開始）ならこのジェスチャー全体をタップ扱いしない
+                    if (e.touches.length > 1) isMultiTouchRef.current = true;
+                    if (e.touches.length === 2) {
+                      const [t1, t2] = e.touches;
+                      pinchStateRef.current = {
+                        startDist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
+                        startZoom: boardZoom,
+                        startMidX: (t1.clientX + t2.clientX) / 2,
+                        startMidY: (t1.clientY + t2.clientY) / 2,
+                        startPanX: boardPan.x,
+                        startPanY: boardPan.y,
+                      };
                     }
                   },
                   onTouchMove: (e) => {
-                    // 操作中に2本指になった場合もピンチ扱いへ昇格
-                    if (e.touches.length > 1) {
-                      isMultiTouchRef.current = true;
+                    // タップ開始後に2本目の指が触れてもピンチ扱いにする（片手の指が後から追加されるケース）
+                    if (e.touches.length > 1) isMultiTouchRef.current = true;
+                    if (e.touches.length === 2) {
+                      const [t1, t2] = e.touches;
+                      if (!pinchStateRef.current) {
+                        // 2本目が少し遅れて触れたケース。ここでも開始基準を取っておく
+                        pinchStateRef.current = {
+                          startDist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
+                          startZoom: boardZoom,
+                          startMidX: (t1.clientX + t2.clientX) / 2,
+                          startMidY: (t1.clientY + t2.clientY) / 2,
+                          startPanX: boardPan.x,
+                          startPanY: boardPan.y,
+                        };
+                        return;
+                      }
+                      e.preventDefault();
+                      const ps = pinchStateRef.current;
+                      const curDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+                      const curMidX = (t1.clientX + t2.clientX) / 2;
+                      const curMidY = (t1.clientY + t2.clientY) / 2;
+                      const newZoom = Math.min(2.5, Math.max(1, ps.startZoom * (curDist / ps.startDist)));
+                      // 指の中間点の移動量をズーム倍率で割って、盤面座標系での移動量に変換
+                      const newPanX = ps.startPanX + (curMidX - ps.startMidX) / newZoom;
+                      const newPanY = ps.startPanY + (curMidY - ps.startMidY) / newZoom;
+                      setBoardZoom(newZoom);
+                      setBoardPan({ x: newPanX, y: newPanY });
                     }
                   },
                   onTouchEnd: (e) => {
-                    const wasMultiTouch = isMultiTouchRef.current;
-                    // ピンチ中 / 他の指がまだ残っている間はブラウザ既定動作を止めない
-                    if (e.touches.length > 0 || wasMultiTouch) {
+                    e.preventDefault();
+                    if (e.touches.length < 2) pinchStateRef.current = null;
+                    // まだ他の指が盤面に触れている、またはこのジェスチャーがピンチだった場合は
+                    // 投擲として扱わない（ピンチズーム解除時に点数が誤って入るのを防ぐ）
+                    if (e.touches.length > 0 || isMultiTouchRef.current) {
                       if (e.touches.length === 0) isMultiTouchRef.current = false;
                       return;
                     }
-                    // 単指タップだけスコア入力として扱う
-                    e.preventDefault();
-                    isMultiTouchRef.current = false;
                     handleBoardClick(e);
-                  },
-                  onTouchCancel: () => {
-                    isMultiTouchRef.current = false;
                   },
                   viewBox: "-210 -210 420 420",
                   className:
                     "w-full h-full drop-shadow-[0_15px_30px_rgba(0,0,0,0.95)] overflow-visible cursor-crosshair",
-                  style: { touchAction: "pinch-zoom" },
+                  style: {
+                    touchAction: "none",
+                    transform: `scale(${boardZoom}) translate(${boardPan.x}px, ${boardPan.y}px)`,
+                    transformOrigin: "center center",
+                    transition: pinchStateRef.current ? "none" : "transform 0.15s ease-out",
+                  },
                 },
                 React.createElement(
                   "defs",
@@ -3495,6 +3491,15 @@
                 }),
               ),
               /* Corner buttons removed - using action bar below */
+              (boardZoom !== 1 || boardPan.x !== 0 || boardPan.y !== 0) && React.createElement(
+                "button",
+                {
+                  onClick: () => { playSound("click"); setBoardZoom(1); setBoardPan({ x: 0, y: 0 }); },
+                  className: "absolute -top-1 -right-1 z-30 h-7 px-2 rounded-full bg-zinc-900/90 border border-amber-500/40 text-amber-400 flex items-center justify-center text-[10px] font-black tracking-wide shadow-lg cursor-pointer",
+                  title: "ズームを1倍に戻す",
+                },
+                "🔍 1×",
+              ),
             ),
 
             (playerCount >= 2 || cpuMode) && React.createElement(
