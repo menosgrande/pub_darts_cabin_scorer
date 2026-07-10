@@ -69,7 +69,7 @@ tailwind.css Tailwind CSS
 manifest.json PWA用マニフェスト（ホーム画面追加・standalone表示）
 sw.js        Service Worker（オフラインキャッシュ。更新時はCACHE_VERSIONを上げる）
 icons/       PWAアイコン（192/512/512maskable/apple-touch-icon）
-vendor/      React 18 UMDビルドをローカル同梱（CDN非依存・完全オフライン対応）
+vendor/      React 18 UMDビルド + Interフォント(700/900)をローカル同梱（CDN非依存・完全オフライン対応）
 STATE_MANAGEMENT.md  状態管理の設計原則・リファレンス
 ```
 

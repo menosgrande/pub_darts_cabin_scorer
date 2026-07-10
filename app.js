@@ -1661,15 +1661,15 @@
     const [checkoutPref, setCheckoutPref] = useState("double");
     const [bullType, setBullType] = useState("separate");
     const [cuRounds, setCuRounds] = useState(COUNT_UP_ROUNDS);
-    const [maxRounds, setMaxRounds] = useState(null); // null = ∞
+    const [maxRounds, setMaxRounds] = useState(30); // 上限は30（無制限は現実的でないため廃止）
     const [p1Handicap, setP1Handicap] = useState(0); // クリケット専用: 開始時の頭出しマーク数(0-21)
     const [p2Handicap, setP2Handicap] = useState(0);
     const [autoHandicap01, setAutoHandicap01] = useState("off"); // "off" | "dl2"（DARTSLIVE2準拠オートハンデ）
     const [autoHandicapCricket, setAutoHandicapCricket] = useState("off"); // "off" | "dl2"
     // p1Rating/p2Ratingは01・クリケットのオートハンデで共用（実際のDARTSLIVEは種目別レーティングだが、
     // このアプリでは入力欄を増やしすぎないための簡略化）。
-    const [p1Rating, setP1Rating] = useState(10); // オートハンデ用レーティング(0.5刻み, 0〜17)
-    const [p2Rating, setP2Rating] = useState(10);
+    const [p1Rating, setP1Rating] = useState(6); // オートハンデ用レーティング(1刻み, 0〜17。デフォルト6前後)
+    const [p2Rating, setP2Rating] = useState(6);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [showHowTo, setShowHowTo] = useState(false);
     const [showSettingsSetup, setShowSettingsSetup] = useState(true);
@@ -2282,7 +2282,7 @@
       clearSavedGame();
       setGameMode(mode);
       setBullType("separate");
-      setMaxRounds(null);
+      setMaxRounds(30);
       let p1StartVal = 501, p2StartVal = 501, p1Marks, p2Marks;
       if (mode === "01") {
         setOutMode("double");
@@ -3992,23 +3992,40 @@
                 !(playerCount >= 2 && players[1] && players[1].history.length > 0) &&
                 React.createElement(
                   "div",
-                  { className: "grid grid-cols-2 gap-2" },
-                  [["01", "501", "⚡"], ["cricket", "クリケット", "🎯"]].map(([mode, label, icon]) =>
-                    React.createElement(
-                      "button",
-                      {
-                        key: mode,
-                        onClick: () => handleQuickStart(mode),
-                        className:
-                          "py-2.5 rounded-2xl bg-gradient-to-r from-zinc-900 to-zinc-900/60 border border-amber-500/30 flex items-center justify-center gap-1.5 cursor-pointer hover:border-amber-500/60 transition",
-                      },
-                      React.createElement("span", { className: "text-xs" }, icon),
+                  { className: "space-y-1.5" },
+                  React.createElement("p", { className: "setup-section-label" }, "クイックスタート"),
+                  React.createElement(
+                    "div",
+                    { className: "grid grid-cols-2 gap-2" },
+                    [
+                      ["01", "501", "⚡", "Double Out・ハンデなし"],
+                      ["cricket", "クリケット", "🎯", "ハンデなし"],
+                    ].map(([mode, label, icon, caption]) =>
                       React.createElement(
-                        "span",
-                        { className: "text-[10px] font-black tracking-wider text-amber-300 uppercase" },
-                        label,
-                      ),
-                    )
+                        "button",
+                        {
+                          key: mode,
+                          onClick: () => handleQuickStart(mode),
+                          className:
+                            "py-2.5 rounded-2xl bg-gradient-to-r from-zinc-900 to-zinc-900/60 border border-amber-500/30 flex flex-col items-center justify-center gap-0.5 cursor-pointer hover:border-amber-500/60 transition",
+                        },
+                        React.createElement(
+                          "span",
+                          { className: "flex items-center gap-1.5" },
+                          React.createElement("span", { className: "text-xs" }, icon),
+                          React.createElement(
+                            "span",
+                            { className: "text-[10px] font-black tracking-wider text-amber-300 uppercase" },
+                            label,
+                          ),
+                        ),
+                        React.createElement(
+                          "span",
+                          { className: "text-[8px] text-zinc-600 font-bold" },
+                          caption,
+                        ),
+                      )
+                    ),
                   ),
                 ),
 
@@ -4098,12 +4115,12 @@
                             React.createElement("div", { className: "flex items-center justify-between gap-1" },
                               React.createElement("span", { className: "text-[8px] text-zinc-600 font-bold" }, `${label} RT`),
                               React.createElement("button", {
-                                onClick: () => { playSound("click"); setRating(r => Math.max(0, Math.round((r - 0.5) * 2) / 2)); },
+                                onClick: () => { playSound("click"); setRating(r => Math.max(0, r - 1)); },
                                 className: "setup-score-btn flex-1 text-xs",
                               }, "－"),
-                              React.createElement("span", { className: "text-sm font-black font-mono text-white tabular-nums w-10 text-center" }, rating.toFixed(1)),
+                              React.createElement("span", { className: "text-sm font-black font-mono text-white tabular-nums w-10 text-center" }, rating),
                               React.createElement("button", {
-                                onClick: () => { playSound("click"); setRating(r => Math.min(17, Math.round((r + 0.5) * 2) / 2)); },
+                                onClick: () => { playSound("click"); setRating(r => Math.min(17, r + 1)); },
                                 className: "setup-score-btn flex-1 text-xs",
                               }, "＋"),
                             ),
@@ -4111,7 +4128,7 @@
                           )
                         ),
                       ),
-                      React.createElement("p", { className: "text-[8px] text-zinc-600 text-center" }, `レーティング差 ${diff.toFixed(1)}`),
+                      React.createElement("p", { className: "text-[8px] text-zinc-600 text-center" }, `レーティング差 ${diff}`),
                     );
                   })(),
                 ),
@@ -4173,19 +4190,19 @@
                           React.createElement("div", { key: label, className: "flex items-center justify-between gap-1" },
                             React.createElement("span", { className: "text-[8px] text-zinc-600 font-bold" }, `${label} RT`),
                             React.createElement("button", {
-                              onClick: () => { playSound("click"); setRating(r => Math.max(0, Math.round((r - 0.5) * 2) / 2)); },
+                              onClick: () => { playSound("click"); setRating(r => Math.max(0, r - 1)); },
                               className: "setup-score-btn flex-1 text-xs",
                             }, "－"),
-                            React.createElement("span", { className: "text-sm font-black font-mono text-white tabular-nums w-10 text-center" }, rating.toFixed(1)),
+                            React.createElement("span", { className: "text-sm font-black font-mono text-white tabular-nums w-10 text-center" }, rating),
                             React.createElement("button", {
-                              onClick: () => { playSound("click"); setRating(r => Math.min(17, Math.round((r + 0.5) * 2) / 2)); },
+                              onClick: () => { playSound("click"); setRating(r => Math.min(17, r + 1)); },
                               className: "setup-score-btn flex-1 text-xs",
                             }, "＋"),
                           )
                         ),
                       ),
                       React.createElement("p", { className: "text-[8px] text-amber-500/80 font-bold text-center truncate" }, preview),
-                      React.createElement("p", { className: "text-[8px] text-zinc-600 text-center" }, `レーティング差 ${Math.floor(diff)}（クリケットは整数切り捨て）`),
+                      React.createElement("p", { className: "text-[8px] text-zinc-600 text-center" }, `レーティング差 ${diff}`),
                     );
                   })(),
                 ),
@@ -4203,7 +4220,7 @@
 
                 /* 01・クリケット共通: ラウンド上限 */
                 (gameMode === "01" || gameMode === "cricket") && React.createElement("div", { className: "grid grid-cols-4 gap-2" },
-                  [[10,"10"],[15,"15"],[20,"20"],[null,"∞"]].map(([r,lbl]) =>
+                  [[10,"10"],[15,"15"],[20,"20"],[30,"30"]].map(([r,lbl]) =>
                     React.createElement("button", {
                       key: String(r),
                       onClick: () => { playSound("click"); setMaxRounds(r); },

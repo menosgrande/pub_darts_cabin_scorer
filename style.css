@@ -1,3 +1,27 @@
+      /* ── UI基本フォント（Inter, ローカル同梱）──
+         Tailwindのbase(ui-sans-serif/system-ui)はOSごとにSF Pro(iOS)/Roboto(Android)/
+         Segoe UI(Windows)と全く違う書体になり、特にfont-black+uppercase+tracking-widestな
+         ラベル群は端末によって見え方の差が大きい。全端末で同じ見た目になるようInterを自前で
+         読み込んで上書きする。英数字のみのサブセット（日本語文字は元々カバーしないので、
+         日本語テキストは引き続きOS標準の日本語フォントにフォールバックする＝意図通り）。 */
+      @font-face {
+        font-family: 'Inter';
+        font-style: normal;
+        font-weight: 700;
+        font-display: swap;
+        src: url('vendor/fonts/inter-700.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Inter';
+        font-style: normal;
+        font-weight: 900;
+        font-display: swap;
+        src: url('vendor/fonts/inter-900.woff2') format('woff2');
+      }
+      html, body {
+        font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+      }
+
       :root { color-scheme: dark; }
       html { background: #050508; }
       body {

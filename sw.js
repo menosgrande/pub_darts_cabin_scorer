@@ -3,7 +3,7 @@
 //
 // 更新方針: CACHE_NAME のバージョンを上げると、新しいSWがインストールされ、
 // 古いキャッシュは activate 時に破棄される。ファイルを更新したら CACHE_VERSION を上げること。
-const CACHE_VERSION = "v4"; // v4: オフライン時のnavigateリクエストをindex.html（アプリシェル）にフォールバック
+const CACHE_VERSION = "v5"; // v5: Interフォントをローカル同梱してprecacheに追加
 const CACHE_NAME = `pdcs-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
@@ -18,6 +18,8 @@ const PRECACHE_URLS = [
   "./icons/icon-512-maskable.png",
   "./vendor/react.production.min.js",
   "./vendor/react-dom.production.min.js",
+  "./vendor/fonts/inter-700.woff2",
+  "./vendor/fonts/inter-900.woff2",
 ];
 
 self.addEventListener("install", (event) => {
