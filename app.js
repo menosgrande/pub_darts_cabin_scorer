@@ -4008,13 +4008,16 @@
                 React.createElement("p", { className: "setup-section-label" }, "RULES"),
 
                 /* 01: 持ち点PRESET（両者共通） */
-                gameMode === "01" && React.createElement("div", { className: "grid grid-cols-3 gap-2" },
-                  [301, 501, 701].map(s =>
-                    React.createElement("button", {
-                      key: s,
-                      onClick: () => { playSound("click"); setP1StartScore(s); setP2StartScore(s); },
-                      className: `setup-toggle-btn ${p1StartScore===s&&p2StartScore===s?"setup-toggle-active":"setup-toggle-inactive"}`,
-                    }, s)
+                gameMode === "01" && React.createElement("div", { className: "space-y-1" },
+                  React.createElement("p", { className: "text-[8px] text-zinc-600 font-bold tracking-widest" }, "SCORE"),
+                  React.createElement("div", { className: "grid grid-cols-3 gap-2" },
+                    [301, 501, 701].map(s =>
+                      React.createElement("button", {
+                        key: s,
+                        onClick: () => { playSound("click"); setP1StartScore(s); setP2StartScore(s); },
+                        className: `setup-toggle-btn ${p1StartScore===s&&p2StartScore===s?"setup-toggle-active":"setup-toggle-inactive"}`,
+                      }, s)
+                    ),
                   ),
                 ),
 
@@ -4088,37 +4091,43 @@
                     React.createElement("button", { className: `slide-opt ${autoHandicapCricket==="off"?"active":"inactive"}` }, "MANUAL"),
                     React.createElement("button", { className: `slide-opt ${autoHandicapCricket==="dl2"?"active":"inactive"}` }, "AUTO (DL2)"),
                   ),
-                  autoHandicapCricket === "off" && React.createElement("div", { className: "space-y-2" },
-                    /* ハンデを受け取る側の選択 */
-                    React.createElement("div", { className: "grid grid-cols-2 gap-2" },
-                      ["p1", "p2"].map(t =>
-                        React.createElement("button", {
-                          key: t,
-                          onClick: () => { playSound("click"); setCricketHandicapTarget(t); },
-                          className: `setup-toggle-btn py-1.5 ${cricketHandicapTarget===t?"setup-toggle-active":"setup-toggle-inactive"}`,
-                        }, `Handicap ${t.toUpperCase()}`)
+                  autoHandicapCricket === "off" && React.createElement("div", { className: "space-y-2.5" },
+                    /* ハンデを受け取る側の選択（スライドトグル。P1/P2ボタンを並べる方式は
+                       44px最小タッチターゲットのボタンが密集レイアウトと衝突してレイアウトが
+                       崩れていたため、他の箇所と統一されたslide-trackに変更） */
+                    React.createElement("div", { className: "flex items-center gap-3" },
+                      React.createElement("span", { className: "text-[8px] text-zinc-600 font-bold w-14 shrink-0" }, "HANDICAP"),
+                      React.createElement("div", {
+                        className: "flex-1 slide-track",
+                        onClick: () => { playSound("click"); setCricketHandicapTarget(t => t === "p1" ? "p2" : "p1"); },
+                      },
+                        React.createElement("div", { className: `slide-thumb ${cricketHandicapTarget==="p1"?"left":"right"}` }),
+                        React.createElement("button", { className: `slide-opt ${cricketHandicapTarget==="p1"?"active":"inactive"}` }, "P1"),
+                        React.createElement("button", { className: `slide-opt ${cricketHandicapTarget==="p2"?"active":"inactive"}` }, "P2"),
                       ),
                     ),
-                    /* 20〜15の個別マーク調整（0〜3マーク） */
-                    React.createElement("div", { className: "grid grid-cols-3 gap-x-2 gap-y-1.5" },
+                    /* 20〜15の個別マーク調整（0〜3マーク）。
+                       3列×2行だと44px最小のsetup-score-btnが2つ並ぶ幅が確保できず崩れていたため、
+                       2列×3行に変更し、このグリッド専用の小さいステッパーボタンを使う。 */
+                    React.createElement("div", { className: "grid grid-cols-2 gap-x-3 gap-y-1.5" },
                       [20, 19, 18, 17, 16, 15].map(n =>
-                        React.createElement("div", { key: n, className: "flex items-center justify-between gap-1" },
-                          React.createElement("span", { className: "text-[8px] text-zinc-600 font-bold w-4" }, n),
+                        React.createElement("div", { key: n, className: "flex items-center justify-between gap-1.5" },
+                          React.createElement("span", { className: "text-[9px] text-zinc-500 font-bold w-4 text-center" }, n),
                           React.createElement("button", {
                             onClick: () => { playSound("click"); setManualCricketMarks(m => ({ ...m, [n]: Math.max(0, m[n] - 1) })); },
-                            className: "setup-score-btn flex-1 text-xs",
+                            className: "w-6 h-6 shrink-0 rounded-md bg-zinc-900 border border-zinc-700/70 text-zinc-400 text-[11px] font-black flex items-center justify-center cursor-pointer active:scale-90 transition",
                           }, "－"),
-                          React.createElement("span", { className: "text-xs font-black font-mono text-white tabular-nums w-4 text-center" }, manualCricketMarks[n]),
+                          React.createElement("span", { className: "text-xs font-black font-mono text-white tabular-nums w-4 text-center shrink-0" }, manualCricketMarks[n]),
                           React.createElement("button", {
                             onClick: () => { playSound("click"); setManualCricketMarks(m => ({ ...m, [n]: Math.min(3, m[n] + 1) })); },
-                            className: "setup-score-btn flex-1 text-xs",
+                            className: "w-6 h-6 shrink-0 rounded-md bg-zinc-900 border border-zinc-700/70 text-amber-500 text-[11px] font-black flex items-center justify-center cursor-pointer active:scale-90 transition",
                           }, "＋"),
                         )
                       ),
                     ),
                     /* 得点の直接加算 */
                     React.createElement("div", { className: "flex items-center justify-between gap-1" },
-                      React.createElement("span", { className: "text-[8px] text-zinc-600 font-bold" }, "Bonus +"),
+                      React.createElement("span", { className: "text-[8px] text-zinc-600 font-bold w-14 shrink-0" }, "BONUS +"),
                       React.createElement("button", {
                         onClick: () => { playSound("click"); setManualCricketBonus(b => Math.max(0, b - 8)); },
                         className: "setup-score-btn flex-1 text-xs",
@@ -4166,24 +4175,30 @@
                 ),
 
                 /* Count-Up: ラウンド数 */
-                gameMode === "countup" && React.createElement("div", { className: "grid grid-cols-4 gap-2" },
-                  [5,8,10,15].map(r =>
-                    React.createElement("button", {
-                      key: r,
-                      onClick: () => { playSound("click"); setCuRounds(r); },
-                      className: `setup-toggle-btn ${cuRounds===r?"setup-toggle-active":"setup-toggle-inactive"}`,
-                    }, r)
+                gameMode === "countup" && React.createElement("div", { className: "space-y-1" },
+                  React.createElement("p", { className: "text-[8px] text-zinc-600 font-bold tracking-widest" }, "ROUNDS"),
+                  React.createElement("div", { className: "grid grid-cols-4 gap-2" },
+                    [5,8,10,15].map(r =>
+                      React.createElement("button", {
+                        key: r,
+                        onClick: () => { playSound("click"); setCuRounds(r); },
+                        className: `setup-toggle-btn ${cuRounds===r?"setup-toggle-active":"setup-toggle-inactive"}`,
+                      }, r)
+                    ),
                   ),
                 ),
 
                 /* 01・クリケット共通: ラウンド上限 */
-                (gameMode === "01" || gameMode === "cricket") && React.createElement("div", { className: "grid grid-cols-4 gap-2" },
-                  [[10,"10"],[15,"15"],[20,"20"],[30,"30"]].map(([r,lbl]) =>
-                    React.createElement("button", {
-                      key: String(r),
-                      onClick: () => { playSound("click"); setMaxRounds(r); },
-                      className: `setup-toggle-btn ${maxRounds===r?"setup-toggle-active":"setup-toggle-inactive"}`,
-                    }, lbl)
+                (gameMode === "01" || gameMode === "cricket") && React.createElement("div", { className: "space-y-1" },
+                  React.createElement("p", { className: "text-[8px] text-zinc-600 font-bold tracking-widest" }, "MAX ROUNDS"),
+                  React.createElement("div", { className: "grid grid-cols-4 gap-2" },
+                    [[10,"10"],[15,"15"],[20,"20"],[30,"30"]].map(([r,lbl]) =>
+                      React.createElement("button", {
+                        key: String(r),
+                        onClick: () => { playSound("click"); setMaxRounds(r); },
+                        className: `setup-toggle-btn ${maxRounds===r?"setup-toggle-active":"setup-toggle-inactive"}`,
+                      }, lbl)
+                    ),
                   ),
                 ),
 
