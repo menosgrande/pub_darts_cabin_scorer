@@ -1648,9 +1648,13 @@
     const [bullType, setBullType] = useState("separate");
     const [cuRounds, setCuRounds] = useState(COUNT_UP_ROUNDS);
     const [maxRounds, setMaxRounds] = useState(30); // 上限は30（無制限は現実的でないため廃止）
-    const [cricketHandicapTarget, setCricketHandicapTarget] = useState("p1"); // "p1" | "p2"（手動ハンデを受け取る側。1人だけに付ける想定）
-    const [manualCricketMarks, setManualCricketMarks] = useState({ 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0 }); // Bullは対象外
-    const [manualCricketBonus, setManualCricketBonus] = useState(0); // 手動ハンデの直接加算得点
+    // 手動クリケットハンデ: P1/P2それぞれ独立に20-15+Bullのマーク数(0-3)とボーナス得点を持つ
+    // （以前は「1人だけ選んで付ける」方式だったが、コンパクトな表形式レイアウトの要望に合わせ、
+    // 両者を同時に見渡せる独立指定方式に戻した）。
+    const [manualCricketMarksP1, setManualCricketMarksP1] = useState({ 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0, 25: 0 });
+    const [manualCricketMarksP2, setManualCricketMarksP2] = useState({ 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0, 25: 0 });
+    const [manualCricketBonusP1, setManualCricketBonusP1] = useState(0);
+    const [manualCricketBonusP2, setManualCricketBonusP2] = useState(0);
     const [autoHandicap01, setAutoHandicap01] = useState("off"); // "off" | "dl2"（DARTSLIVE2準拠オートハンデ）
     const [autoHandicapCricket, setAutoHandicapCricket] = useState("off"); // "off" | "dl2"
     // p1Rating/p2Ratingは01・クリケットのオートハンデで共用（実際のDARTSLIVEは種目別レーティングだが、
@@ -2273,8 +2277,10 @@
       } else if (mode === "cricket") {
         // ハンデなしのまっさらな状態で開始（手動ハンデ・DL2オートハンデどちらもオフ）
         setAutoHandicapCricket("off");
-        setManualCricketMarks({ 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0 });
-        setManualCricketBonus(0);
+        setManualCricketMarksP1({ 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0, 25: 0 });
+        setManualCricketMarksP2({ 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0, 25: 0 });
+        setManualCricketBonusP1(0);
+        setManualCricketBonusP2(0);
         p1Marks = makeEmptyCricketMarks();
         p2Marks = makeEmptyCricketMarks();
       } else if (mode === "countup") {
@@ -2322,8 +2328,8 @@
         : { p1: baseScore, p2: getDartslive2_01Handicap(diff, baseScore) };
     };
 
-    // クリケットの開始時マーク/ボーナス得点を算出。手動モードはcricketHandicapTargetで
-    // 選んだ1人だけにmanualCricketMarks/manualCricketBonusをそのまま適用し、
+    // クリケットの開始時マーク/ボーナス得点を算出。手動モードはP1/P2それぞれ独立に
+    // manualCricketMarksP1/P2・manualCricketBonusP1/P2をそのまま適用し、
     // DL2モードはレーティング差からDARTSLIVE2表を引く。
     const computeCricketSetup = () => {
       const empty = { marks: undefined, bonus: 0, handicapCount: 0 };
@@ -2340,17 +2346,14 @@
           ? { p1: handicapped, p2: empty }
           : { p1: empty, p2: handicapped };
       }
-      const hasAnyManualHandicap =
-        Object.values(manualCricketMarks).some((v) => v > 0) || manualCricketBonus > 0;
-      if (!hasAnyManualHandicap) return { p1: empty, p2: empty };
-      const handicapped = {
-        marks: { ...makeEmptyCricketMarks(), ...manualCricketMarks },
-        bonus: manualCricketBonus,
-        handicapCount: manualCricketBonus,
+      const toSetup = (marks, bonus) =>
+        (Object.values(marks).some((v) => v > 0) || bonus > 0)
+          ? { marks: { ...makeEmptyCricketMarks(), ...marks }, bonus, handicapCount: bonus }
+          : empty;
+      return {
+        p1: toSetup(manualCricketMarksP1, manualCricketBonusP1),
+        p2: toSetup(manualCricketMarksP2, manualCricketBonusP2),
       };
-      return cricketHandicapTarget === "p1"
-        ? { p1: handicapped, p2: empty }
-        : { p1: empty, p2: handicapped };
     };
 
     // ── ゲーム開始 ──
@@ -2864,7 +2867,7 @@
         if (d.players && d.players[0] && d.players[1]) {
           setP1StartScore(d.players[0].initialScore);
           setP2StartScore(d.players[1].initialScore);
-          // 手動クリケットハンデ(cricketHandicapTarget/manualCricketMarks/manualCricketBonus)は
+          // 手動クリケットハンデ(manualCricketMarksP1/P2, manualCricketBonusP1/P2)は
           // p1Rating/p2Ratingと同様セットアップ画面専用の一時値なので、復元対象に含めない。
         }
         setHasRestorableSave(true);
@@ -4121,52 +4124,62 @@
                     React.createElement("button", { className: `slide-opt ${autoHandicapCricket==="off"?"active":"inactive"}` }, "MANUAL"),
                     React.createElement("button", { className: `slide-opt ${autoHandicapCricket==="dl2"?"active":"inactive"}` }, "AUTO (DL2)"),
                   ),
-                  autoHandicapCricket === "off" && React.createElement("div", { className: "space-y-2.5" },
-                    /* ハンデを受け取る側の選択（スライドトグル。P1/P2ボタンを並べる方式は
-                       44px最小タッチターゲットのボタンが密集レイアウトと衝突してレイアウトが
-                       崩れていたため、他の箇所と統一されたslide-trackに変更） */
-                    React.createElement("div", { className: "flex items-center gap-3" },
-                      React.createElement("span", { className: "text-[8px] text-zinc-600 font-bold w-14 shrink-0" }, "HANDICAP"),
-                      React.createElement("div", {
-                        className: "flex-1 slide-track",
-                        onClick: () => { playSound("click"); setCricketHandicapTarget(t => t === "p1" ? "p2" : "p1"); },
-                      },
-                        React.createElement("div", { className: `slide-thumb ${cricketHandicapTarget==="p1"?"left":"right"}` }),
-                        React.createElement("button", { className: `slide-opt ${cricketHandicapTarget==="p1"?"active":"inactive"}` }, "P1"),
-                        React.createElement("button", { className: `slide-opt ${cricketHandicapTarget==="p2"?"active":"inactive"}` }, "P2"),
+                  autoHandicapCricket === "off" && React.createElement("div", { className: "space-y-1.5" },
+                    /* コンパクトな表形式: 列=20/19/18/17/16/15/Bull、行=P1/P2。
+                       各セルは ◀ 数値 ▶ の極小ステッパー。P1/P2は独立して指定できる
+                       （以前は1人だけ選ぶ方式だったが、両者を同時に見渡せる表の方が
+                       分かりやすいとのフィードバックでこの形にした）。 */
+                    React.createElement("div", { className: "grid grid-cols-[22px_repeat(7,1fr)] gap-x-0.5" },
+                      // ヘッダー行: ナンバーラベル
+                      React.createElement("span", null), // P1/P2ラベル列の空セル
+                      ...[20, 19, 18, 17, 16, 15, 25].map(n =>
+                        React.createElement("span", { key: `h${n}`, className: "text-[8px] text-zinc-600 font-bold text-center" }, n === 25 ? "B" : n)
                       ),
-                    ),
-                    /* 20〜15の個別マーク調整（0〜3マーク）。
-                       3列×2行だと44px最小のsetup-score-btnが2つ並ぶ幅が確保できず崩れていたため、
-                       2列×3行に変更し、このグリッド専用の小さいステッパーボタンを使う。 */
-                    React.createElement("div", { className: "grid grid-cols-2 gap-x-3 gap-y-1.5" },
-                      [20, 19, 18, 17, 16, 15].map(n =>
-                        React.createElement("div", { key: n, className: "flex items-center justify-between gap-1.5" },
-                          React.createElement("span", { className: "text-[9px] text-zinc-500 font-bold w-4 text-center" }, n),
+                      // P1行
+                      React.createElement("span", { className: "text-[9px] text-amber-500/80 font-black self-center" }, "P1"),
+                      ...[20, 19, 18, 17, 16, 15, 25].map(n =>
+                        React.createElement("div", { key: `p1-${n}`, className: "flex items-center justify-center" },
                           React.createElement("button", {
-                            onClick: () => { playSound("click"); setManualCricketMarks(m => ({ ...m, [n]: Math.max(0, m[n] - 1) })); },
-                            className: "w-6 h-6 shrink-0 rounded-md bg-zinc-900 border border-zinc-700/70 text-zinc-400 text-[11px] font-black flex items-center justify-center cursor-pointer active:scale-90 transition",
-                          }, "－"),
-                          React.createElement("span", { className: "text-xs font-black font-mono text-white tabular-nums w-4 text-center shrink-0" }, manualCricketMarks[n]),
+                            onClick: () => { playSound("click"); setManualCricketMarksP1(m => ({ ...m, [n]: Math.max(0, m[n] - 1) })); },
+                            className: "w-3.5 text-zinc-500 text-[10px] leading-none cursor-pointer active:text-zinc-300",
+                          }, "‹"),
+                          React.createElement("span", { className: "w-3 text-[10px] font-black font-mono text-white text-center" }, manualCricketMarksP1[n]),
                           React.createElement("button", {
-                            onClick: () => { playSound("click"); setManualCricketMarks(m => ({ ...m, [n]: Math.min(3, m[n] + 1) })); },
-                            className: "w-6 h-6 shrink-0 rounded-md bg-zinc-900 border border-zinc-700/70 text-amber-500 text-[11px] font-black flex items-center justify-center cursor-pointer active:scale-90 transition",
-                          }, "＋"),
+                            onClick: () => { playSound("click"); setManualCricketMarksP1(m => ({ ...m, [n]: Math.min(3, m[n] + 1) })); },
+                            className: "w-3.5 text-amber-500 text-[10px] leading-none cursor-pointer active:text-amber-300",
+                          }, "›"),
+                        )
+                      ),
+                      // P2行
+                      React.createElement("span", { className: "text-[9px] text-amber-500/80 font-black self-center" }, "P2"),
+                      ...[20, 19, 18, 17, 16, 15, 25].map(n =>
+                        React.createElement("div", { key: `p2-${n}`, className: "flex items-center justify-center" },
+                          React.createElement("button", {
+                            onClick: () => { playSound("click"); setManualCricketMarksP2(m => ({ ...m, [n]: Math.max(0, m[n] - 1) })); },
+                            className: "w-3.5 text-zinc-500 text-[10px] leading-none cursor-pointer active:text-zinc-300",
+                          }, "‹"),
+                          React.createElement("span", { className: "w-3 text-[10px] font-black font-mono text-white text-center" }, manualCricketMarksP2[n]),
+                          React.createElement("button", {
+                            onClick: () => { playSound("click"); setManualCricketMarksP2(m => ({ ...m, [n]: Math.min(3, m[n] + 1) })); },
+                            className: "w-3.5 text-amber-500 text-[10px] leading-none cursor-pointer active:text-amber-300",
+                          }, "›"),
                         )
                       ),
                     ),
-                    /* 得点の直接加算 */
-                    React.createElement("div", { className: "flex items-center justify-between gap-1" },
-                      React.createElement("span", { className: "text-[8px] text-zinc-600 font-bold w-14 shrink-0" }, "BONUS +"),
-                      React.createElement("button", {
-                        onClick: () => { playSound("click"); setManualCricketBonus(b => Math.max(0, b - 8)); },
-                        className: "setup-score-btn flex-1 text-xs",
-                      }, "－"),
-                      React.createElement("span", { className: "text-sm font-black font-mono text-white tabular-nums w-12 text-center" }, manualCricketBonus),
-                      React.createElement("button", {
-                        onClick: () => { playSound("click"); setManualCricketBonus(b => Math.min(400, b + 8)); },
-                        className: "setup-score-btn flex-1 text-xs",
-                      }, "＋"),
+                    /* 得点の直接加算（P1/P2それぞれ1行、同じ ◀ ▶ の見た目で統一） */
+                    [["P1", manualCricketBonusP1, setManualCricketBonusP1], ["P2", manualCricketBonusP2, setManualCricketBonusP2]].map(([label, bonus, setBonus]) =>
+                      React.createElement("div", { key: label, className: "flex items-center gap-1.5" },
+                        React.createElement("span", { className: "text-[8px] text-zinc-600 font-bold w-6 shrink-0" }, `${label}+`),
+                        React.createElement("button", {
+                          onClick: () => { playSound("click"); setBonus(b => Math.max(0, b - 8)); },
+                          className: "w-5 h-5 shrink-0 rounded bg-zinc-900 border border-zinc-700/70 text-zinc-400 text-[10px] flex items-center justify-center cursor-pointer active:scale-90 transition",
+                        }, "－"),
+                        React.createElement("span", { className: "text-[11px] font-black font-mono text-white tabular-nums w-8 text-center" }, bonus),
+                        React.createElement("button", {
+                          onClick: () => { playSound("click"); setBonus(b => Math.min(400, b + 8)); },
+                          className: "w-5 h-5 shrink-0 rounded bg-zinc-900 border border-zinc-700/70 text-amber-500 text-[10px] flex items-center justify-center cursor-pointer active:scale-90 transition",
+                        }, "＋"),
+                      )
                     ),
                   ),
                   autoHandicapCricket === "dl2" && (() => {

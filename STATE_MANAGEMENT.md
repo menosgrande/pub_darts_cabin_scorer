@@ -55,19 +55,20 @@
 | `cpuDifficulty` | `string` | `"medium"` | ✅ | ✅ `cpuDifficultyRef` | ❌ |
 | `p1StartScore` | `number` | `501` | ✅（players経由） | ❌ | ❌ |
 | `p2StartScore` | `number` | `501` | ✅（players経由） | ❌ | ❌ |
-| `cricketHandicapTarget` | `"p1"\|"p2"` | `"p1"` | ❌（セットアップ画面専用の一時state） | ❌ | ❌ |
-| `manualCricketMarks` | `{20,19,18,17,16,15: number}` | 全0 | ❌（同上） | ❌ | ❌ |
-| `manualCricketBonus` | `number` | `0` | ❌（同上） | ❌ | ❌ |
+| `manualCricketMarksP1` | `{20,19,18,17,16,15,25: number}` | 全0 | ❌（セットアップ画面専用の一時state） | ❌ | ❌ |
+| `manualCricketMarksP2` | `{20,19,18,17,16,15,25: number}` | 全0 | ❌（同上） | ❌ | ❌ |
+| `manualCricketBonusP1` | `number` | `0` | ❌（同上） | ❌ | ❌ |
+| `manualCricketBonusP2` | `number` | `0` | ❌（同上） | ❌ | ❌ |
 | `autoHandicap01` | `"off"\|"dl2"` | `"off"` | ❌（セットアップ画面専用の一時state） | ❌ | ❌ |
 | `autoHandicapCricket` | `"off"\|"dl2"` | `"off"` | ❌（同上） | ❌ | ❌ |
 | `p1Rating` | `number` | `6` | ❌（同上・01/クリケットで共用） | ❌ | ❌ |
 | `p2Rating` | `number` | `6` | ❌（同上） | ❌ | ❌ |
 
-> **クリケットの手動ハンディキャップ（改訂版）**: 旧仕様は「マーク総数を1つ指定してCRICKET_TARGETS順に自動分配」という間接的な指定方法だったが分かりにくいとのフィードバックで全面刷新。`cricketHandicapTarget`("p1"|"p2")でハンデを受け取る側を1人選び、`manualCricketMarks`（20/19/18/17/16/15それぞれ0〜3マーク、Bull対象外）と`manualCricketBonus`（直接加算得点）を個別指定する方式にした。DL2オートハンデと同じ`{marks, bonus}`構造なので`computeCricketSetup()`内での扱いが統一されている。
+> **クリケットの手動ハンディキャップ（改訂版v2）**: v1では「1人選んでハンデを付ける」方式（`cricketHandicapTarget`で対象を選択）だったが、「両者を同時に見渡せる表形式にしたい」というフィードバックでさらに刷新。`manualCricketMarksP1`/`manualCricketMarksP2`（それぞれ20/19/18/17/16/15/25=Bullの0〜3マーク、独立）と`manualCricketBonusP1`/`manualCricketBonusP2`（直接加算得点、独立）で、P1/P2が完全に独立してハンデを持てるようになった（両者に付けることも可能）。UIは「列=ナンバー、行=P1/P2」の表形式で、各セルは`‹ 数値 ›`の極小ステッパー。DL2オートハンデと同じ`{marks, bonus}`構造なので`computeCricketSetup()`内での扱いが統一されている点は変わらない。
 
 > **01のオートハンデ（DARTSLIVE2準拠）**: `autoHandicap01`("off"|"dl2") / `p1Rating` / `p2Rating` はセットアップ画面専用の一時state。`p1StartScore`/`p2StartScore` と同じ設計方針で、ゲーム開始時に `computeAuto01Scores()` がレーティング差から実際の開始点数を算出して `players[].initialScore` に焼き込むだけで、rating自体はセーブ対象に含めない（ゲーム開始後は `initialScore` が唯一のsource of truthで、rating入力は再現不要）。出典は DARTSLIVE公式サポート記事の添付PDF（301/501/701/901/1101/1501 × レーティング差0.5刻み〜8.5以降プラトー）。表自体は0.5刻みだが、UI上は0.5刻みの差が体感できないとの判断で1刻みのステッパーに簡略化した（`getDartslive2_01Handicap`/`getDartslive2CricketHandicap` 側は引き続き0.5刻みの入力にも対応できる作りのまま。UI側の制約であって計算ロジックの制約ではない）。
 
-> **クリケットのオートハンデ（DARTSLIVE2準拠）**: `autoHandicapCricket`("off"|"dl2") で手動(`cricketHandicapTarget`/`manualCricketMarks`/`manualCricketBonus`)と切り替え。DL2モードは `p1Rating`/`p2Rating`（01と共用）の差から `getDartslive2CricketHandicap(diff)` が `{marks, bonus}` を返す。出典はユーザー提供の画像（レーティング差1〜17の整数のみ、小数点以下切り捨て）: 18→17→16→15の順に1マーク→2マークを積み、diff=8で全4ナンバーが2マーク（3マーク＝完全クローズには到達しない）、diff=9以降はマークが増えずボーナス得点のみ加算される。ボーナス得点は `makePlayer` の第6引数 `initialCricketScore` として `cricketScore` の初期値に反映（`cricketScore: initialCricketScore || 0`）。手動モードとDL2モードは相互排他で、`computeCricketSetup()` が両方のケースを吸収して呼び出し側を単純にしている。DL2は20・19・Bullが対象外（手動は20・19も対象、Bullのみ対象外）。
+> **クリケットのオートハンデ（DARTSLIVE2準拠）**: `autoHandicapCricket`("off"|"dl2") で手動(`manualCricketMarksP1`/`P2`, `manualCricketBonusP1`/`P2`)と切り替え。DL2モードは `p1Rating`/`p2Rating`（01と共用）の差から `getDartslive2CricketHandicap(diff)` が `{marks, bonus}` を返す。出典はユーザー提供の画像（レーティング差1〜17の整数のみ、小数点以下切り捨て）: 18→17→16→15の順に1マーク→2マークを積み、diff=8で全4ナンバーが2マーク（3マーク＝完全クローズには到達しない）、diff=9以降はマークが増えずボーナス得点のみ加算される。ボーナス得点は `makePlayer` の第6引数 `initialCricketScore` として `cricketScore` の初期値に反映（`cricketScore: initialCricketScore || 0`）。手動モードとDL2モードは相互排他で、`computeCricketSetup()` が両方のケースを吸収して呼び出し側を単純にしている。DL2は20・19・Bullが対象外（手動は20・19・Bullすべて対象）。
 
 > **1Pソロ時のハンデ非表示**: `playerCount === 1` は「対戦相手が存在しない」ことを意味する（CPU ONの場合は必ず`playerCount`が2に強制されるため、1のときは常にソロ）。この状態ではハンデ比較の対象がいないため、`computeAuto01Scores()`/`computeCricketSetup()`はどちらも`playerCount === 1`を最優先でチェックし、2P時に設定した値が残っていても常にハンデを無視する。UI側（HANDICAPセクション）も同条件で非表示にしているが、**計算ロジック側でも独立してガードしている**点が重要（UIを消しただけでは、既にセットされたstateが計算に使われ続けてしまうバグを防ぐため）。
 
