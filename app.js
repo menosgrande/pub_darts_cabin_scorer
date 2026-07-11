@@ -3010,7 +3010,7 @@
         ),
         React.createElement(
           "div",
-          { className: "flex items-center space-x-1.5" },
+          { className: "flex items-center space-x-1" },
           React.createElement(
             "button",
             {
@@ -3019,7 +3019,7 @@
                 ? (helpLang === "ja" ? "ミュートにする" : "Mute sound")
                 : (helpLang === "ja" ? "ミュートを解除する" : "Unmute sound"),
               className:
-                "w-7 h-7 rounded-lg bg-[#141419] border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-amber-400 hover:border-amber-500/30 transition cursor-pointer",
+                "w-10 h-10 rounded-lg bg-[#141419] border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-amber-400 hover:border-amber-500/30 transition cursor-pointer",
             },
             soundEnabled
               ? React.createElement(
@@ -3039,7 +3039,7 @@
               onClick: () => setShowHowTo(true),
               "aria-label": helpLang === "ja" ? "使い方を表示" : "Show how to play",
               className:
-                "w-7 h-7 rounded-lg bg-[#141419] border border-zinc-800 flex items-center justify-center text-amber-500/80 hover:border-amber-500/30 transition cursor-pointer",
+                "w-10 h-10 rounded-lg bg-[#141419] border border-zinc-800 flex items-center justify-center text-amber-500/80 hover:border-amber-500/30 transition cursor-pointer",
             },
             React.createElement(Icons.HelpCircle, null),
           ),
@@ -3048,7 +3048,7 @@
             {
               onClick: handleBackToMenuRequest,
               className:
-                "h-7 px-2.5 rounded-lg bg-[#141419] border border-zinc-800 flex items-center gap-1.5 text-[9px] font-bold text-zinc-400 hover:text-amber-400 hover:border-amber-500/30 transition cursor-pointer",
+                "h-10 px-3 rounded-lg bg-[#141419] border border-zinc-800 flex items-center gap-1.5 text-[9px] font-bold text-zinc-400 hover:text-amber-400 hover:border-amber-500/30 transition cursor-pointer",
             },
             React.createElement(Icons.Settings, null),
             React.createElement("span", null, "MENU"),
@@ -3188,10 +3188,12 @@
                   viewBox: "-210 -210 420 420",
                   className:
                     "w-full h-full drop-shadow-[0_15px_30px_rgba(0,0,0,0.95)] overflow-visible cursor-crosshair",
-                  // touch-action: "pan-y" だけだとpinch-zoomが暗黙に含まれず、ブラウザのネイティブ
-                  // ピンチズームがこの要素上では効かなくなる（要求されていたのはこれの修正で、
-                  // 盤面だけを拡大する自前ズーム機能ではなかった）。pinch-zoomを明示的に許可する。
-                  style: { touchAction: "pan-y pinch-zoom" },
+                  // pinch-zoomを許可すると、フィルター(グロー/ブラー)を多用したこのSVGを
+                  // ネイティブズームで繰り返し再描画することになり、モバイルブラウザ
+                  // （特にiOS Safari）がメモリ圧迫でクラッシュするケースが確認された。
+                  // 数字の視認性は別途フォント色の修正で対応済みなので、ここは安全側に倒して
+                  // 盤面上でのピンチズームは無効化する（ページ全体のズームは引き続き可能）。
+                  style: { touchAction: "manipulation" },
                 },
                 React.createElement(
                   "defs",
@@ -3462,57 +3464,64 @@
             ),
           ),
 
-          /* ── アクションバー（ミス + 操作系） ── */
+          /* ── アクションバー（ミス + 操作系）。PREVは「前ターンを丸ごと戻す」で
+             MISS/UNDO/CLEARとは意味も影響範囲も大きく違うため、間にgapと縦の区切り線を入れて
+             視覚的にも分離する（誤操作防止のレビュー指摘への対応）。 ── */
           React.createElement(
             "div",
-            { className: "w-full max-w-sm mt-2 flex gap-1.5 relative z-20" },
+            { className: "w-full max-w-sm mt-2 flex gap-2.5 relative z-20" },
             React.createElement(
-              "button",
-              {
-                className: "action-bar-btn ab-miss",
-                onClick: () => handleKeypadTap(0),
-                disabled: winner || isCpuTurn || confirmStage === "next" || confirmStage === "gameover" || (!canAddMoreThrows && editingThrowIndex === null),
-                title: "Miss",
-              },
-              React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" },
-                React.createElement("circle", { cx: "12", cy: "12", r: "9", opacity: "0.35" }),
-                React.createElement("line", { x1: "8", y1: "8", x2: "16", y2: "16" }),
-                React.createElement("line", { x1: "16", y1: "8", x2: "8", y2: "16" }),
+              "div",
+              { className: "flex-1 flex gap-1.5" },
+              React.createElement(
+                "button",
+                {
+                  className: "action-bar-btn ab-miss",
+                  onClick: () => handleKeypadTap(0),
+                  disabled: winner || isCpuTurn || confirmStage === "next" || confirmStage === "gameover" || (!canAddMoreThrows && editingThrowIndex === null),
+                  title: "Miss",
+                },
+                React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" },
+                  React.createElement("circle", { cx: "12", cy: "12", r: "9", opacity: "0.35" }),
+                  React.createElement("line", { x1: "8", y1: "8", x2: "16", y2: "16" }),
+                  React.createElement("line", { x1: "16", y1: "8", x2: "8", y2: "16" }),
+                ),
+                React.createElement("span", null, "MISS"),
               ),
-              React.createElement("span", null, "MISS"),
+              React.createElement(
+                "button",
+                {
+                  className: "action-bar-btn ab-undo",
+                  onClick: handleUndoSingleDart,
+                  disabled: currentThrows.length === 0 || confirmStage === "next" || confirmStage === "gameover",
+                  title: "Undo last dart",
+                },
+                React.createElement(Icons.Undo2, null),
+                React.createElement("span", null, "UNDO"),
+              ),
+              React.createElement(
+                "button",
+                {
+                  className: "action-bar-btn ab-clear",
+                  onClick: handleFlushRound,
+                  disabled: (currentThrows.length === 0 && confirmStage !== "next") || confirmStage === "gameover",
+                  title: "Clear turn",
+                },
+                React.createElement(Icons.Trash2, null),
+                React.createElement("span", null, "CLEAR"),
+              ),
             ),
+            React.createElement("div", { className: "w-px my-1 bg-zinc-700/50 shrink-0" }), // MISS/UNDO/CLEAR と PREV を区切る縦線
             React.createElement(
               "button",
               {
-                className: "action-bar-btn ab-undo",
-                onClick: handleUndoSingleDart,
-                disabled: currentThrows.length === 0 || confirmStage === "next" || confirmStage === "gameover",
-                title: "Undo last dart",
-              },
-              React.createElement(Icons.Undo2, null),
-              React.createElement("span", null, "UNDO"),
-            ),
-            React.createElement(
-              "button",
-              {
-                className: "action-bar-btn ab-clear",
-                onClick: handleFlushRound,
-                disabled: (currentThrows.length === 0 && confirmStage !== "next") || confirmStage === "gameover",
-                title: "Clear turn",
-              },
-              React.createElement(Icons.Trash2, null),
-              React.createElement("span", null, "CLEAR"),
-            ),
-            React.createElement(
-              "button",
-              {
-                className: `action-bar-btn ab-prev${undoConfirmStage === "confirm" ? " pulsing" : ""}`,
+                className: `action-bar-btn ab-prev shrink-0 !flex-none w-24${undoConfirmStage === "confirm" ? " pulsing" : ""}`,
                 onClick: handleUndoCommittedTurn,
                 disabled: turnHistoryState.length === 0 || !!winner || confirmStage === "gameover",
                 title: "Undo previous turn",
               },
               React.createElement(Icons.RotateCcw, null),
-              React.createElement("span", null, undoConfirmStage === "confirm" ? "SURE?" : "PREV"),
+              React.createElement("span", null, undoConfirmStage === "confirm" ? "SURE?" : "PREV TURN"),
             ),
           ),
 
@@ -3810,6 +3819,15 @@
                 },
                 confirmStage === "next" ? "NEXT  →" : "OK",
               ),
+              React.createElement(
+                "p",
+                { className: "text-center text-[9px] font-bold text-zinc-600 tracking-wide" },
+                currentThrows.length === 0 && confirmStage !== "next"
+                  ? "Enter a throw to continue"
+                  : confirmStage === "next"
+                    ? "Continue to the next turn"
+                    : "Commit this turn's score",
+              ),
             ),
           ),
         ),
@@ -3906,13 +3924,25 @@
                 ),
 
                 /* CPU難易度（CPU ONの時だけ） */
-                cpuMode && React.createElement("div", { className: "grid grid-cols-4 gap-1.5" },
-                  [["easy","EASY"],["medium","MED"],["hard","HARD"],["pro","PRO"]].map(([d,lbl]) =>
-                    React.createElement("button", {
-                      key: d,
-                      onClick: () => { playSound("click"); setCpuDifficulty(d); },
-                      className: `setup-toggle-btn py-2 ${cpuDifficulty===d?"setup-toggle-active":"setup-toggle-inactive"}`,
-                    }, lbl)
+                cpuMode && React.createElement("div", { className: "space-y-1" },
+                  React.createElement("div", { className: "grid grid-cols-4 gap-1.5" },
+                    [["easy","EASY"],["medium","MED"],["hard","HARD"],["pro","PRO"]].map(([d,lbl]) =>
+                      React.createElement("button", {
+                        key: d,
+                        onClick: () => { playSound("click"); setCpuDifficulty(d); },
+                        className: `setup-toggle-btn py-2 ${cpuDifficulty===d?"setup-toggle-active":"setup-toggle-inactive"}`,
+                      }, lbl)
+                    ),
+                  ),
+                  React.createElement(
+                    "p",
+                    { className: "text-[8px] text-zinc-600 font-bold text-center" },
+                    {
+                      easy: "Casual — misses often, easy to beat",
+                      medium: "Steady — solid but not sharp",
+                      hard: "Accurate — punishes mistakes",
+                      pro: "Tight finishes — rarely misses checkouts",
+                    }[cpuDifficulty],
                   ),
                 ),
 
@@ -4528,15 +4558,30 @@
                   ),
                 ),
             React.createElement(
-              "button",
-              {
-                onClick: () => {
-                  handleStartGame(true);
+              "div",
+              { className: "space-y-2" },
+              React.createElement(
+                "button",
+                {
+                  onClick: () => {
+                    handleStartGame(false);
+                  },
+                  className:
+                    "w-full py-3.5 bg-gradient-to-r from-amber-400 to-amber-500 text-black font-black text-base rounded-2xl cursor-pointer hover:from-amber-300 hover:to-amber-400 shadow-[0_8px_24px_rgba(245,158,11,0.2)] tracking-[0.1em] uppercase transition",
                 },
-                className:
-                  "w-full py-3.5 bg-gradient-to-r from-amber-400 to-amber-500 text-black font-black text-base rounded-2xl cursor-pointer hover:from-amber-300 hover:to-amber-400 shadow-[0_8px_24px_rgba(245,158,11,0.2)] tracking-[0.1em] uppercase transition",
-              },
-              "もう一度 / PLAY AGAIN",
+                "PLAY AGAIN",
+              ),
+              React.createElement(
+                "button",
+                {
+                  onClick: () => {
+                    handleStartGame(true);
+                  },
+                  className:
+                    "w-full py-2.5 bg-zinc-900/80 border border-zinc-700/60 text-zinc-400 font-black text-[11px] rounded-xl cursor-pointer hover:border-amber-500/30 hover:text-amber-400 tracking-widest uppercase transition",
+                },
+                "Change Settings",
+              ),
             ),
           ),
         ),
