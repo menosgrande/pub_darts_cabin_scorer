@@ -59,12 +59,13 @@
 | `manualCricketMarksP2` | `{20,19,18,17,16,15,25: number}` | 全0 | ❌（同上） | ❌ | ❌ |
 | `manualCricketBonusP1` | `number` | `0` | ❌（同上） | ❌ | ❌ |
 | `manualCricketBonusP2` | `number` | `0` | ❌（同上） | ❌ | ❌ |
+| `cricketHandicapEditTarget` | `"p1"\|"p2"` | `"p1"` | ❌（UI表示専用。ゲームロジックには影響しない） | ❌ | ❌ |
 | `autoHandicap01` | `"off"\|"dl2"` | `"off"` | ❌（セットアップ画面専用の一時state） | ❌ | ❌ |
 | `autoHandicapCricket` | `"off"\|"dl2"` | `"off"` | ❌（同上） | ❌ | ❌ |
 | `p1Rating` | `number` | `6` | ❌（同上・01/クリケットで共用） | ❌ | ❌ |
 | `p2Rating` | `number` | `6` | ❌（同上） | ❌ | ❌ |
 
-> **クリケットの手動ハンディキャップ（改訂版v2）**: v1では「1人選んでハンデを付ける」方式（`cricketHandicapTarget`で対象を選択）だったが、「両者を同時に見渡せる表形式にしたい」というフィードバックでさらに刷新。`manualCricketMarksP1`/`manualCricketMarksP2`（それぞれ20/19/18/17/16/15/25=Bullの0〜3マーク、独立）と`manualCricketBonusP1`/`manualCricketBonusP2`（直接加算得点、独立）で、P1/P2が完全に独立してハンデを持てるようになった（両者に付けることも可能）。UIは「列=ナンバー、行=P1/P2」の表形式で、各セルは`‹ 数値 ›`の極小ステッパー。DL2オートハンデと同じ`{marks, bonus}`構造なので`computeCricketSetup()`内での扱いが統一されている点は変わらない。
+> **クリケットの手動ハンディキャップ（改訂版v3）**: v1「1人選んでハンデ」→v2「P1/P2を表形式で同時表示」ときて、「ボタンが小さすぎて押せない」というフィードバックでv3に刷新。データ構造（`manualCricketMarksP1`/`P2`, `manualCricketBonusP1`/`P2`）自体はv2から変更なし（両者が独立してハンデを持てる）。変わったのはUIのみ：7列×2行を同時表示する代わりに、`cricketHandicapEditTarget`("p1"|"p2")というUI専用stateで「今どちらを編集中か」を切り替え、1人分の7列だけを大きなボタン（列幅いっぱいの縦積み▲▼）で表示するようにした。**教訓**: 密なグリッドで「情報を全部同時に見せる」よりも「タブ切り替えで1つずつ大きく操作できる」方が、タッチ操作の実用性では勝ることが多い。データの独立性（両者が同時にハンデを持てる）とUI表示の同時性（両者を同時に画面に出す）は別の設計判断であり、後者だけを妥協しても前者は失われない。
 
 > **01のオートハンデ（DARTSLIVE2準拠）**: `autoHandicap01`("off"|"dl2") / `p1Rating` / `p2Rating` はセットアップ画面専用の一時state。`p1StartScore`/`p2StartScore` と同じ設計方針で、ゲーム開始時に `computeAuto01Scores()` がレーティング差から実際の開始点数を算出して `players[].initialScore` に焼き込むだけで、rating自体はセーブ対象に含めない（ゲーム開始後は `initialScore` が唯一のsource of truthで、rating入力は再現不要）。出典は DARTSLIVE公式サポート記事の添付PDF（301/501/701/901/1101/1501 × レーティング差0.5刻み〜8.5以降プラトー）。表自体は0.5刻みだが、UI上は0.5刻みの差が体感できないとの判断で1刻みのステッパーに簡略化した（`getDartslive2_01Handicap`/`getDartslive2CricketHandicap` 側は引き続き0.5刻みの入力にも対応できる作りのまま。UI側の制約であって計算ロジックの制約ではない）。
 
@@ -431,6 +432,12 @@ const [stats, setStats] = useState(...); // ✕ 二重管理の元
 `handleStartGame(showSetup)` の第1引数はゲーム開始後に `GAME SETUP` モーダルを再度開くかどうかを制御する。リザルト画面の唯一のボタンが `handleStartGame(true)` を呼んでいたため、ラベルは「PLAY AGAIN」なのに実際の挙動は「同条件でリセットしつつ設定画面に戻る」になっていた。ボタンを2つに分離し、`handleStartGame(false)`＝即座に再戦、`handleStartGame(true)`＝設定変更、とラベルと挙動を一致させた。
 
 **教訓**: 引数のデフォルト値（`showSetup = false`）と実際の呼び出し（`true`固定）が食い違っていないか、ボタンラベルを見て挙動を推測できるかを定期的に確認すること。
+
+### JSXブロックを `React.createElement("div", {...}, children)` から即時実行関数(IIFE)に書き換える際、閉じ括弧の数が合わなくなりやすい
+
+クリケット手動ハンデのUIを表形式→タブ切り替え式に書き換えた際、`React.createElement("div", {...}, A, B, C)` の形から `(() => { ...; return React.createElement(...); })()` の形に変えたが、旧構造の末尾に残っていた `),` を消し忘れ、遠く離れた（400行以上先の）無関係な箇所で `Unexpected token ')'` のエラーになった。
+
+**教訓**: JSXの構造を「複数要素を並べる形」から「IIFEで計算してから1つ返す形」に変える（またはその逆）ときは、開始と終了を同時に書き換える意識を持つこと。`node --check` で構文エラーが出た行は、実際の原因箇所とは限らない（括弧の対応ズレは離れた場所でエラーとして顕在化する）。エラー行だけでなく、直前に編集した箇所の開き括弧・閉じ括弧の数を先に目視で数え直す方が早いことが多い。
 
 ---
 

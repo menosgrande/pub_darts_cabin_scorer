@@ -4124,64 +4124,45 @@
                     React.createElement("button", { className: `slide-opt ${autoHandicapCricket==="off"?"active":"inactive"}` }, "MANUAL"),
                     React.createElement("button", { className: `slide-opt ${autoHandicapCricket==="dl2"?"active":"inactive"}` }, "AUTO (DL2)"),
                   ),
-                  autoHandicapCricket === "off" && React.createElement("div", { className: "space-y-1.5" },
-                    /* コンパクトな表形式: 列=20/19/18/17/16/15/Bull、行=P1/P2。
-                       各セルは ◀ 数値 ▶ の極小ステッパー。P1/P2は独立して指定できる
-                       （以前は1人だけ選ぶ方式だったが、両者を同時に見渡せる表の方が
-                       分かりやすいとのフィードバックでこの形にした）。 */
-                    React.createElement("div", { className: "grid grid-cols-[22px_repeat(7,1fr)] gap-x-0.5" },
-                      // ヘッダー行: ナンバーラベル
-                      React.createElement("span", null), // P1/P2ラベル列の空セル
-                      ...[20, 19, 18, 17, 16, 15, 25].map(n =>
-                        React.createElement("span", { key: `h${n}`, className: "text-[8px] text-zinc-600 font-bold text-center" }, n === 25 ? "B" : n)
+                  autoHandicapCricket === "off" && (() => {
+                    const stepBtn = (onClick, symbol, colorClass) =>
+                      React.createElement("button", {
+                        onClick: () => { playSound("click"); onClick(); },
+                        className: `w-7 h-7 shrink-0 rounded-md bg-zinc-900 border border-zinc-700/70 ${colorClass} text-xs font-black flex items-center justify-center cursor-pointer active:scale-90 transition`,
+                      }, symbol);
+                    return React.createElement("div", { className: "space-y-2" },
+                      /* 中央にナンバーの凡例を1つだけ置き、その左にP1、右にP2のステッパーを配置。
+                         ◀▶は文字だけだと押しにくいとのフィードバックで、背景・枠付きの
+                         きちんとしたボタン要素にしている。 */
+                      React.createElement("div", { className: "grid grid-cols-2 gap-x-2 px-9" },
+                        React.createElement("p", { className: "text-[9px] text-amber-500/80 font-black text-center" }, "P1"),
+                        React.createElement("p", { className: "text-[9px] text-amber-500/80 font-black text-center" }, "P2"),
                       ),
-                      // P1行
-                      React.createElement("span", { className: "text-[9px] text-amber-500/80 font-black self-center" }, "P1"),
-                      ...[20, 19, 18, 17, 16, 15, 25].map(n =>
-                        React.createElement("div", { key: `p1-${n}`, className: "flex items-center justify-center" },
-                          React.createElement("button", {
-                            onClick: () => { playSound("click"); setManualCricketMarksP1(m => ({ ...m, [n]: Math.max(0, m[n] - 1) })); },
-                            className: "w-3.5 text-zinc-500 text-[10px] leading-none cursor-pointer active:text-zinc-300",
-                          }, "‹"),
-                          React.createElement("span", { className: "w-3 text-[10px] font-black font-mono text-white text-center" }, manualCricketMarksP1[n]),
-                          React.createElement("button", {
-                            onClick: () => { playSound("click"); setManualCricketMarksP1(m => ({ ...m, [n]: Math.min(3, m[n] + 1) })); },
-                            className: "w-3.5 text-amber-500 text-[10px] leading-none cursor-pointer active:text-amber-300",
-                          }, "›"),
-                        )
+                      React.createElement("div", { className: "space-y-1" },
+                        [20, 19, 18, 17, 16, 15, 25].map(n =>
+                          React.createElement("div", { key: n, className: "flex items-center justify-center gap-1.5" },
+                            stepBtn(() => setManualCricketMarksP1(m => ({ ...m, [n]: Math.max(0, m[n] - 1) })), "－", "text-zinc-400"),
+                            React.createElement("span", { className: "text-xs font-black font-mono text-white w-3 text-center" }, manualCricketMarksP1[n]),
+                            stepBtn(() => setManualCricketMarksP1(m => ({ ...m, [n]: Math.min(3, m[n] + 1) })), "＋", "text-amber-500"),
+                            React.createElement("span", { className: "text-[10px] text-zinc-500 font-bold w-7 shrink-0 text-center" }, n === 25 ? "BULL" : n),
+                            stepBtn(() => setManualCricketMarksP2(m => ({ ...m, [n]: Math.max(0, m[n] - 1) })), "－", "text-zinc-400"),
+                            React.createElement("span", { className: "text-xs font-black font-mono text-white w-3 text-center" }, manualCricketMarksP2[n]),
+                            stepBtn(() => setManualCricketMarksP2(m => ({ ...m, [n]: Math.min(3, m[n] + 1) })), "＋", "text-amber-500"),
+                          )
+                        ),
                       ),
-                      // P2行
-                      React.createElement("span", { className: "text-[9px] text-amber-500/80 font-black self-center" }, "P2"),
-                      ...[20, 19, 18, 17, 16, 15, 25].map(n =>
-                        React.createElement("div", { key: `p2-${n}`, className: "flex items-center justify-center" },
-                          React.createElement("button", {
-                            onClick: () => { playSound("click"); setManualCricketMarksP2(m => ({ ...m, [n]: Math.max(0, m[n] - 1) })); },
-                            className: "w-3.5 text-zinc-500 text-[10px] leading-none cursor-pointer active:text-zinc-300",
-                          }, "‹"),
-                          React.createElement("span", { className: "w-3 text-[10px] font-black font-mono text-white text-center" }, manualCricketMarksP2[n]),
-                          React.createElement("button", {
-                            onClick: () => { playSound("click"); setManualCricketMarksP2(m => ({ ...m, [n]: Math.min(3, m[n] + 1) })); },
-                            className: "w-3.5 text-amber-500 text-[10px] leading-none cursor-pointer active:text-amber-300",
-                          }, "›"),
-                        )
+                      /* 得点の直接加算も同じ「中央ラベル＋左右ステッパー」の見た目で統一 */
+                      React.createElement("div", { className: "flex items-center justify-center gap-1.5" },
+                        stepBtn(() => setManualCricketBonusP1(b => Math.max(0, b - 8)), "－", "text-zinc-400"),
+                        React.createElement("span", { className: "text-xs font-black font-mono text-white w-8 text-center" }, manualCricketBonusP1),
+                        stepBtn(() => setManualCricketBonusP1(b => Math.min(400, b + 8)), "＋", "text-amber-500"),
+                        React.createElement("span", { className: "text-[10px] text-zinc-500 font-bold w-7 shrink-0 text-center" }, "PTS"),
+                        stepBtn(() => setManualCricketBonusP2(b => Math.max(0, b - 8)), "－", "text-zinc-400"),
+                        React.createElement("span", { className: "text-xs font-black font-mono text-white w-8 text-center" }, manualCricketBonusP2),
+                        stepBtn(() => setManualCricketBonusP2(b => Math.min(400, b + 8)), "＋", "text-amber-500"),
                       ),
-                    ),
-                    /* 得点の直接加算（P1/P2それぞれ1行、同じ ◀ ▶ の見た目で統一） */
-                    [["P1", manualCricketBonusP1, setManualCricketBonusP1], ["P2", manualCricketBonusP2, setManualCricketBonusP2]].map(([label, bonus, setBonus]) =>
-                      React.createElement("div", { key: label, className: "flex items-center gap-1.5" },
-                        React.createElement("span", { className: "text-[8px] text-zinc-600 font-bold w-6 shrink-0" }, `${label}+`),
-                        React.createElement("button", {
-                          onClick: () => { playSound("click"); setBonus(b => Math.max(0, b - 8)); },
-                          className: "w-5 h-5 shrink-0 rounded bg-zinc-900 border border-zinc-700/70 text-zinc-400 text-[10px] flex items-center justify-center cursor-pointer active:scale-90 transition",
-                        }, "－"),
-                        React.createElement("span", { className: "text-[11px] font-black font-mono text-white tabular-nums w-8 text-center" }, bonus),
-                        React.createElement("button", {
-                          onClick: () => { playSound("click"); setBonus(b => Math.min(400, b + 8)); },
-                          className: "w-5 h-5 shrink-0 rounded bg-zinc-900 border border-zinc-700/70 text-amber-500 text-[10px] flex items-center justify-center cursor-pointer active:scale-90 transition",
-                        }, "＋"),
-                      )
-                    ),
-                  ),
+                    );
+                  })(),
                   autoHandicapCricket === "dl2" && (() => {
                     const diff = Math.abs(p1Rating - p2Rating);
                     const preview = (() => {
