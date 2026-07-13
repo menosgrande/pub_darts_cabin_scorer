@@ -328,42 +328,41 @@ const migrated = migrateSaveData(validated.data); // バージョン間の変換
 ```
 `validateSaveData` が「形式として読めるか」、`migrateSaveData` が「古い形式を新しい形式に変換できるか」を担当する形に分けると、責務が明確になる。version管理を始めた今がこの分岐点であることは認識しておく。
 
-### 2. ロジックの論理整理（実施済み）と物理分割（保留中）
+### 2. ロジックの論理整理 と 物理分割（実施済み）
 
-**現状（実施済み）**: 物理ファイル分割はまだ行わず、`app.js` 単一ファイル内に以下10個のセクション見出し（`◆ SECTION:`コメント）を追加し、責務ごとの境界を明示している。
+**旧状態**: 単一 `app.js`（4600行超）にセクション見出し（`◆ SECTION:`コメント）だけを追加し、責務ごとの境界を明示するに留めていた。ファイルが長くなりすぎたため、このセクション境界に沿って実際に物理ファイル分割を実施した。
+
+**現状（`js/` 配下、6ファイル）**:
 
 ```
-◆ Constants                                  — WEDGES, MAX_THROWS_PER_TURN, 各種定数
-◆ Checkout Logic                             — ARRANGE_TABLE, BOGEY_SETUP_TABLE,
-                                                getSteelDartsArrangement, findCheckoutRoute
-◆ Round & Throw Helpers                      — cloneDeep, getSubtotal, normalizeOutMode,
-                                                getRoundState, getHitSoundType, getThrowFromCoords
-◆ Scoring Logic (Leave Quality)              — compactRoute, BOGEY_NUMBERS, PREFERRED_LEAVES,
-                                                LEAVE_PRIORITY, scoreLeaveQuality
-◆ CPU Difficulty                             — CPU_DIFFICULTY
-◆ CPU Strategy                               — cpuComputeThrow, cpuPlayTurn
-◆ Scoring Logic (Assist Output) — つづき      — findHighScorePlan, buildAssistLine,
-                                                buildCountUpAssist
-◆ React Component — Shared UI Pieces         — Icons, FliqloDigit, FliqloScoreboard, PlayerCockpit
-◆ React Component — Main App                 — function App() 本体
-◆ Save / Restore Helpers (App内部)            — migrateSaveData, handleRestoreSave 周辺
+constants.js      — WEDGES, MAX_THROWS_PER_TURN, COUNT_UP_ROUNDS, LOCAL_STORAGE_KEY, CURRENT_SAVE_VERSION
+checkout.js       — ARRANGE_TABLE, BOGEY_SETUP_TABLE, getSteelDartsArrangement, findCheckoutRoute,
+                    cloneDeep, getSubtotal, normalizeOutMode, getRoundState, getHitSoundType,
+                    getThrowFromCoords, CRICKET_TARGETS・クリケット関連ヘルパー, DARTSLIVE2ハンデ表一式
+                    （「Checkout Logic」+「Round & Throw Helpers」を統合。両者が密結合だったため
+                    無理に分けず1ファイルにまとめた）
+scoring.js        — compactRoute, BOGEY_NUMBERS, PREFERRED_LEAVES, LEAVE_PRIORITY, scoreLeaveQuality,
+                    findHighScorePlan, buildAssistLine, buildCountUpAssist, buildCricketAssist
+                    （「Scoring Logic (Leave Quality)」+「Scoring Logic (Assist Output)」を統合。
+                    元のapp.js内ではCPU Difficulty/Strategyセクションを挟んで非連続だったが、
+                    互いに依存が無いことを確認した上で1ファイルに結合）
+cpu.js            — CPU_DIFFICULTY, cpuComputeThrow, cpuPlayTurn, cpuComputeCricketThrow, cpuPlayCricketTurn
+ui-components.js  — Icons, FliqloDigit, FliqloScoreboard, PlayerCockpit
+app-main.js       — function App() 本体（State定義、イベントハンドラ、Save/Restore Helpers、JSX全体）
+                    + ReactDOM.createRoot(...).render(...) の起動コード
 ```
 
-「Round & Throw Helpers」と「React Component — Shared UI Pieces」は元々の切り出し単位案（`checkout.js`/`scoring.js`/`difficulty.js`/`strategy.js`の4分類）には無かった領域。`getRoundState`等はCheckout/Scoring双方から参照される共通基盤のため、無理にどちらかへ分類すると依存関係の見通しが悪化すると判断し、独立セクションとして追加した。
+**読み込み順（`index.html`）**: `constants → checkout → scoring / cpu（相互非依存） → ui-components → app-main`。
 
-このセクション整理は **コメント追加のみ**（関数の中身・順序・state構造は無変更）で、git diffで `+` 行が全てコメント行であることを確認済み（削除行0、追加行は全て`//`または空行）。
+**分割方式の判断**: `type="module"` のES Modulesは使わず、非モジュールの `<script>` タグを依存順に並べる方式にした。理由は、このアプリが `file://` で直接開いても動くことを前提にしており（sw.js登録処理のコメント参照）、ES Modulesは `file://` 環境でCORSによりブロックされる（Chromeで顕著）ため。非モジュールscriptは各ファイルのトップレベル `const`/`function` がそのまま共有グローバルスコープに積み上がる仕様を利用しており、`export`/`import` は使っていない。
 
-**物理ファイル分割（まだ実施しない）**: 上記セクションがそのまま将来の切り出し単位の候補になる。
-```
-checkout.js    → ARRANGE_TABLE, BOGEY_SETUP_TABLE, getSteelDartsArrangement, findCheckoutRoute
-scoring.js     → compactRoute, BOGEY_NUMBERS, PREFERRED_LEAVES, LEAVE_PRIORITY,
-                 scoreLeaveQuality, findHighScorePlan, buildAssistLine, buildCountUpAssist
-difficulty.js  → CPU_DIFFICULTY
-strategy.js    → cpuComputeThrow, cpuPlayTurn
-（命名未定）    → cloneDeep, getSubtotal, normalizeOutMode, getRoundState,
-                 getHitSoundType, getThrowFromCoords （Checkout/Scoring共通基盤）
-```
-物理分割の実施判断は「動く→仕様固める→利用者に触ってもらう→問題箇所が見える→そこで分割」の順を優先し、機能が安定するまでは保留する。分割までは、この範囲の関数が外部state/propsに依存しないよう純粋関数を保つことを優先する。
+**分割時の検証方法**: ブラウザでの実行確認ができない環境だったため、以下の静的チェックで担保した。
+1. 各ファイル単体で `node --check` が通ること
+2. 6ファイルを読み込み順に単純結合したものが `node --check` で構文エラーにならないこと
+3. トップレベル（2インデント）の `const`/`function` 宣言が分割前後で **同数・重複なし** であること
+4. 各ファイルが「自分より後に読み込まれるファイルでしか定義されていない名前」を参照していないこと（コメント内の言及は除外）を正規表現で全数チェック
+
+**教訓**: 「動く→仕様固める→利用者に触ってもらう→問題箇所が見える→そこで分割」の順を優先し、機能が不安定なうちは物理分割を保留する、という以前の方針は正しかった。実際、今回分割した時点でアプリの機能はかなり安定していたため、大きな手戻りなく実施できた。逆に、機能追加が激しい時期に物理分割していたら、ファイルをまたいだ変更のたびに依存順を意識するコストが増え、開発速度が落ちていた可能性が高い。
 
 `CPU_DIFFICULTY` の各パラメータの意味は「CPU Difficulty Parameters」章を参照。
 

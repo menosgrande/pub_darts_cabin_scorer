@@ -2,15 +2,49 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
     <title>Pub Darts Cabin Scorer</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#050508" />
+    <meta name="background-color" content="#050508" />
+
+    <!-- iOS: ホーム画面追加でアドレスバーなしのスタンドアロン表示にする -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Darts Scorer" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+
+    <link rel="icon" href="icons/icon-192.png" />
+
+    <!-- React/ReactDOM はCDN依存を無くしローカル同梱（vendor/）。
+         キャビン設置での完全オフライン起動を保証するため、unpkg等の外部CDNには依存しない。 -->
+    <script src="vendor/react.production.min.js"></script>
+    <script src="vendor/react-dom.production.min.js"></script>
     <link rel="stylesheet" href="tailwind.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <div id="root"></div>
-    <script src="app.js"></script>
+    <!-- app.jsが長大化したため機能単位で分割（js/）。非モジュールscriptなので、
+         この順で読み込むことでグローバルスコープにconstが積み上がっていく。
+         file://での直接オープンでも動作する（type="module"にするとCORSでブロックされるため避けている）。
+         依存関係: constants → checkout → scoring/cpu(どちらもcheckoutに依存、互いには非依存) → ui-components → app-main -->
+    <script src="js/constants.js"></script>
+    <script src="js/checkout.js"></script>
+    <script src="js/scoring.js"></script>
+    <script src="js/cpu.js"></script>
+    <script src="js/ui-components.js"></script>
+    <script src="js/app-main.js"></script>
+    <script>
+      // Service Worker登録（オフライン起動・ホーム画面追加対応）。
+      // file:// 直開きなど登録できない環境では静かにスキップする。
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("sw.js").catch(() => {});
+        });
+      }
+    </script>
   </body>
 </html>

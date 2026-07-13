@@ -68,8 +68,14 @@
 ## ファイル構成
 
 ```
-index.html   エントリーポイント（PWA対応: manifest/SW登録込み）
-app.js       アプリ本体（React, ゲームロジック, UI）
+index.html   エントリーポイント（PWA対応: manifest/SW登録込み。js/を依存順に読み込む）
+js/          アプリ本体（機能単位で分割。非モジュールscriptなので読み込み順が重要）
+  constants.js      ゲーム全体の定数
+  checkout.js       チェックアウトルート探索、盤面座標変換など共通基盤
+  scoring.js        リーブの質評価、アシストバー文言生成
+  cpu.js            CPU難易度パラメータ、CPUの投擲戦略
+  ui-components.js  共有UIコンポーネント（Icons、Fliqlo風フリップ時計、スコアボード）
+  app-main.js       Reactアプリ本体（State、イベントハンドラ、JSX）
 style.css    カスタムスタイル（Fliqlo風フリップ表示、Interフォント読み込みなど）
 tailwind.css Tailwind CSS
 manifest.json PWA用マニフェスト（ホーム画面追加・standalone表示）
@@ -78,6 +84,9 @@ icons/       PWAアイコン（192/512/512maskable/apple-touch-icon）
 vendor/      React 18 UMDビルド + Interフォント(700/900)をローカル同梱（CDN非依存・完全オフライン対応）
 STATE_MANAGEMENT.md  状態管理の設計原則・リファレンス
 ```
+
+`js/`内は依存順に読み込む必要があります（`index.html`に記載の順序を変えないこと）:
+`constants.js` → `checkout.js` → `scoring.js` / `cpu.js`（どちらもcheckout.jsに依存、互いには非依存） → `ui-components.js` → `app-main.js`
 
 ## 開発メモ
 

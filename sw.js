@@ -3,13 +3,18 @@
 //
 // 更新方針: CACHE_NAME のバージョンを上げると、新しいSWがインストールされ、
 // 古いキャッシュは activate 時に破棄される。ファイルを更新したら CACHE_VERSION を上げること。
-const CACHE_VERSION = "v5"; // v5: Interフォントをローカル同梱してprecacheに追加
+const CACHE_VERSION = "v6"; // v6: app.jsをjs/配下に機能分割（constants/checkout/scoring/cpu/ui-components/app-main）
 const CACHE_NAME = `pdcs-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
   "./",
   "./index.html",
-  "./app.js",
+  "./js/constants.js",
+  "./js/checkout.js",
+  "./js/scoring.js",
+  "./js/cpu.js",
+  "./js/ui-components.js",
+  "./js/app-main.js",
   "./style.css",
   "./tailwind.css",
   "./manifest.json",
