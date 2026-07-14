@@ -518,6 +518,33 @@
   // 外部state/propsへの依存を増やさないこと。
   // ═══════════════════════════════════════════════════════════════════════
   // ─────────────────────────────────────────────────────────────────────────
+  // getFinishTargets: 残り点数が「あと1投で上がれる」状態かどうかを判定し、
+  // 該当するセグメント（番号+リング）を全て返す。盤面上のチェックアウト先ハイライト用。
+  // outMode（アウト設定）に応じて有効なリングが変わる:
+  //   single(オープン) → シングル/ダブル/トリプル/Bull(25・50)どれでも可
+  //   double           → ダブル、または50(ブルズアイ)のみ
+  //   master           → ダブル or トリプル、または50のみ
+  // ─────────────────────────────────────────────────────────────────────────
+  const getFinishTargets = (remaining, outMode) => {
+    const targets = [];
+    if (!Number.isFinite(remaining) || remaining <= 0 || remaining > 60) return targets;
+    const om = normalizeOutMode(outMode);
+    const allowSingle = om === "single";
+    const allowDouble = om === "single" || om === "double" || om === "master";
+    const allowTriple = om === "single" || om === "master";
+    if (remaining === 50) targets.push({ num: 25, ring: "bullInner" }); // ブルズアイはどのアウト設定でも有効
+    if (allowSingle && remaining === 25) targets.push({ num: 25, ring: "bullOuter" });
+    if (allowDouble && remaining % 2 === 0 && remaining / 2 >= 1 && remaining / 2 <= 20) {
+      targets.push({ num: remaining / 2, ring: "double" });
+    }
+    if (allowTriple && remaining % 3 === 0 && remaining / 3 >= 1 && remaining / 3 <= 20) {
+      targets.push({ num: remaining / 3, ring: "triple" });
+    }
+    if (allowSingle && remaining >= 1 && remaining <= 20) targets.push({ num: remaining, ring: "single" });
+    return targets;
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
   // findCheckoutRoute: 動的チェックアウト探索
   //   checkoutPref: "double"|"triple"|"single"
   // ─────────────────────────────────────────────────────────────────────────

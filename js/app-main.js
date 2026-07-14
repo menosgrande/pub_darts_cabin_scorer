@@ -189,6 +189,12 @@ const { useState, useEffect, useRef, useMemo } = React;
             subtotal: getSubtotal(currentThrows),
           };
 
+    // 01: 現在の残り点数(バースト中はハイライトしない)で「あと1投で上がれる」セグメント一覧
+    const finishTargets01 =
+      gameMode === "01" && !roundState.isBust
+        ? getFinishTargets(roundState.remainingScore, outMode)
+        : [];
+
     // ── Cricketゲーム用: ライブのマーク/得点状態（打つたびに即時反映）
     const opponentsCricketMarksForActive =
       playerCount === 1
@@ -1678,6 +1684,12 @@ const { useState, useEffect, useRef, useMemo } = React;
                   //    相手だけが先に3マーク到達している場合は相手の色に染める（急いで閉じないと
                   //    相手に加点され続けることを視覚的に警告する）。相手も含め全員が閉じたら暗く沈める。 ──
                   const isCricketNum = gameMode === "cricket" && CRICKET_TARGETS.includes(w);
+                  // ── 01: 残りがあと1投で上がれる状態なら、該当セグメント（ダブル/トリプル）を
+                  //    緑白く光らせる。アウト設定(outMode)によって有効なリングが変わる。 ──
+                  const finish01 =
+                    gameMode === "01" && !winner && confirmStage !== "gameover" && confirmStage !== "next"
+                      ? finishTargets01.find((t) => t.num === w && (t.ring === "double" || t.ring === "triple"))
+                      : null;
                   const myMarksAll = activePlayerIndex === 0 ? p1CricketMarks : p2CricketMarks;
                   const oppMarksAll = activePlayerIndex === 0 ? p2CricketMarks : p1CricketMarks;
                   const myMarks = isCricketNum ? (myMarksAll[w] || 0) : 0;
@@ -1721,6 +1733,25 @@ const { useState, useEffect, useRef, useMemo } = React;
                       fill: bandFill,
                       stroke: "#222",
                       strokeWidth: "0.5",
+                    }),
+                    // 01: あと1投で上がれるセグメントを緑白く光らせる（既存のfillは変えず上に重ねる）
+                    finish01 && finish01.ring === "double" && React.createElement("path", {
+                      d: bp(154, 176),
+                      fill: "#ecfdf5",
+                      opacity: 0.75,
+                      stroke: "#4ade80",
+                      strokeWidth: "1.2",
+                      filter: "url(#marker-glow)",
+                      className: "finish-target-pulse",
+                    }),
+                    finish01 && finish01.ring === "triple" && React.createElement("path", {
+                      d: bp(90, 112),
+                      fill: "#ecfdf5",
+                      opacity: 0.75,
+                      stroke: "#4ade80",
+                      strokeWidth: "1.2",
+                      filter: "url(#marker-glow)",
+                      className: "finish-target-pulse",
                     }),
                     // 対象外 or 両者クローズ済み → 暗く沈める
                     dim && React.createElement("path", { d: bp(22, 176), fill: "#000", opacity: 0.6 }),
@@ -1802,6 +1833,15 @@ const { useState, useEffect, useRef, useMemo } = React;
                       strokeWidth: "0.5",
                     }),
                     bullDead && React.createElement("circle", { r: 22, fill: "#000", opacity: 0.6 }),
+                    // 01: Bullで上がれる場合の緑白ハイライト
+                    finishTargets01.some((t) => t.ring === "bullOuter") && React.createElement("circle", {
+                      r: 22, fill: "#ecfdf5", opacity: 0.75, stroke: "#4ade80", strokeWidth: "1.2",
+                      filter: "url(#marker-glow)", className: "finish-target-pulse",
+                    }),
+                    finishTargets01.some((t) => t.ring === "bullInner") && React.createElement("circle", {
+                      r: 8.5, fill: "#ecfdf5", opacity: 0.75, stroke: "#4ade80", strokeWidth: "1.2",
+                      filter: "url(#marker-glow)", className: "finish-target-pulse",
+                    }),
                     gameMode === "cricket" && (() => {
                       const p1mRaw = p1CricketMarks[25] || 0;
                       const p2mRaw = p2CricketMarks[25] || 0;
