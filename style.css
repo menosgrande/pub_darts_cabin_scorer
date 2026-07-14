@@ -303,3 +303,13 @@
       .history-font { font-size: 2.2vw; }
       @media (min-width: 640px) { .history-font { font-size: 10px; } }
       @media (min-width: 768px) { .history-font { font-size: 11px; } }
+
+      /* 01: あと1投で上がれるセグメントの緑白ハイライト */
+      @keyframes finishTargetPulse {
+        0%, 100% { opacity: 0.55; }
+        50% { opacity: 0.9; }
+      }
+      .finish-target-pulse {
+        animation: finishTargetPulse 1.1s ease-in-out infinite;
+        pointer-events: none;
+      }
