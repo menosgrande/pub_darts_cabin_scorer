@@ -2318,7 +2318,24 @@ const { useState, useEffect, useRef, useMemo } = React;
                   [[1,"👤 1P"],[2,"👥 2P"]].map(([n,lbl]) =>
                     React.createElement("button", {
                       key: n,
-                      onClick: () => { playSound("click"); setPlayerCount(n); setCpuMode(false); },
+                      onClick: () => {
+                        playSound("click");
+                        setPlayerCount(n);
+                        setCpuMode(false);
+                        // CPU対戦後にplayers[1].nameへ"CPU (MEDIUM)"のようなラベルが
+                        // 実データとして残っているケースがある（CPU対戦を一度開始すると
+                        // makePlayerで保存されるため）。1P/2Pへの切り替え時にCPUラベルの
+                        // 残骸をクリアしないと、名前入力欄にそのまま表示されてしまう
+                        // （以前の"---"漏れバグと同じパターン）。
+                        setPlayers(ps => {
+                          if (ps[1] && /^CPU \(/.test(ps[1].name)) {
+                            const u = [...ps];
+                            u[1] = { ...u[1], name: "" };
+                            return u;
+                          }
+                          return ps;
+                        });
+                      },
                       className: `setup-toggle-btn py-2.5 ${playerCount === n && !cpuMode ? "setup-toggle-active" : "setup-toggle-inactive"}`,
                     }, lbl)
                   ),
@@ -2445,12 +2462,12 @@ const { useState, useEffect, useRef, useMemo } = React;
                 /* 01: 持ち点PRESET（両者共通） */
                 gameMode === "01" && React.createElement("div", { className: "space-y-1" },
                   React.createElement("p", { className: "text-[8px] text-zinc-600 font-bold tracking-widest" }, "SCORE"),
-                  React.createElement("div", { className: "grid grid-cols-3 gap-2" },
-                    [301, 501, 701].map(s =>
+                  React.createElement("div", { className: "grid grid-cols-5 gap-1.5" },
+                    [301, 501, 701, 901, 1101].map(s =>
                       React.createElement("button", {
                         key: s,
                         onClick: () => { playSound("click"); setP1StartScore(s); setP2StartScore(s); },
-                        className: `setup-toggle-btn ${p1StartScore===s&&p2StartScore===s?"setup-toggle-active":"setup-toggle-inactive"}`,
+                        className: `setup-toggle-btn text-[11px] px-1 ${p1StartScore===s&&p2StartScore===s?"setup-toggle-active":"setup-toggle-inactive"}`,
                       }, s)
                     ),
                   ),

@@ -4,12 +4,22 @@
 // ═══════════════════════════════════════════════════════════════════════
   // ◆ SECTION: CPU Difficulty
   // CPU難易度パラメータ定義。numberAccuracy/ringWeights(狙いの精度) / dropChance(投げ損ない率) / checkoutHitProb(仕上げ成功率)。
+  //
+  // DARTSLIVEレーティング目安に合わせて較正（出典: https://darts-spot.com/rating/ のダーツライブレーティング表）。
+  // 01の80%スタッツ(PPR)を3で割ってPPD(1投あたり平均点)に換算し、各難易度の期待値がおおよそ
+  // 一致するようにnumberAccuracy/ringWeightsを設定した。
+  //   EASY   ≒ レーティング5  （01スタッツ55〜60、CC〜CCフライト）目標PPD ≒ 19
+  //   MEDIUM ≒ レーティング7  （01スタッツ65〜70、Bフライト）        目標PPD ≒ 22.5
+  //   HARD   ≒ レーティング10 （01スタッツ80〜85、Aフライト）        目標PPD ≒ 27.5
+  //   PRO    ≒ レーティング14 （01スタッツ102〜109、AAフライト）      目標PPD ≒ 35
+  // 以前の設定はHARD/PROが理論値でPPD 45〜55（レーティング17〜18＝トップ選手級）まで
+  // 出てしまっており、「PROはともかくHARDまで強すぎる」という状態だった。
   // ═══════════════════════════════════════════════════════════════════════
   const CPU_DIFFICULTY = {
-    easy:   { numberAccuracy: 0.55, ringWeights: { single: 0.75, double: 0.22, triple: 0.03 }, dropChance: 0.40, dropDarts: 2, checkoutHitProb: 0.10 },
-    medium: { numberAccuracy: 0.62, ringWeights: { single: 0.68, double: 0.25, triple: 0.07 }, dropChance: 0.24, dropDarts: 1, checkoutHitProb: 0.20 },
-    hard:   { numberAccuracy: 0.85, ringWeights: { single: 0.08, double: 0.17, triple: 0.75 }, dropChance: 0.08, dropDarts: 1, checkoutHitProb: 0.60 },
-    pro:    { numberAccuracy: 0.95, ringWeights: { single: 0.03, double: 0.07, triple: 0.90 }, dropChance: 0.02, dropDarts: 0, checkoutHitProb: 0.82 },
+    easy:   { numberAccuracy: 0.65, ringWeights: { single: 0.78, double: 0.19, triple: 0.03 }, dropChance: 0.35, dropDarts: 2, checkoutHitProb: 0.15 },
+    medium: { numberAccuracy: 0.70, ringWeights: { single: 0.62, double: 0.30, triple: 0.08 }, dropChance: 0.22, dropDarts: 1, checkoutHitProb: 0.22 },
+    hard:   { numberAccuracy: 0.72, ringWeights: { single: 0.38, double: 0.37, triple: 0.25 }, dropChance: 0.12, dropDarts: 1, checkoutHitProb: 0.38 },
+    pro:    { numberAccuracy: 0.78, ringWeights: { single: 0.18, double: 0.32, triple: 0.50 }, dropChance: 0.05, dropDarts: 0, checkoutHitProb: 0.55 },
   };
 
   // ═══════════════════════════════════════════════════════════════════════
