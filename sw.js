@@ -3,7 +3,7 @@
 //
 // 更新方針: CACHE_NAME のバージョンを上げると、新しいSWがインストールされ、
 // 古いキャッシュは activate 時に破棄される。ファイルを更新したら CACHE_VERSION を上げること。
-const CACHE_VERSION = "v6"; // v6: app.jsをjs/配下に機能分割（constants/checkout/scoring/cpu/ui-components/app-main）
+const CACHE_VERSION = "v7"; // v7: CPU難易度較正・901/1101プリセット追加・CPUラベル漏れ修正・スワイプ誤爆修正
 const CACHE_NAME = `pdcs-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
