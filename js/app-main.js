@@ -105,6 +105,7 @@ const { useState, useEffect, useRef, useMemo } = React;
     const [undoConfirmStage, setUndoConfirmStage] = useState("idle");
     const boardRef = useRef(null);
     const isMultiTouchRef = useRef(false);
+    const touchStartPosRef = useRef(null); // {x,y}。スワイプ/ドラッグをタップと誤認しないための判定用
     const currentThrowsRef = useRef([]);
     const winnerRef = useRef(null);
     // 最新stateをrefで追跡 → useEffect内のクロージャが古い値を掴む問題を防ぐ
@@ -1556,29 +1557,47 @@ const { useState, useEffect, useRef, useMemo } = React;
                   onTouchStart: (e) => {
                     // 2本指以上（ピンチズームの開始）ならこのジェスチャー全体をタップ扱いしない。
                     // ズーム自体はブラウザのネイティブピンチズームに任せる（自前実装はしない）。
-                    if (e.touches.length > 1) isMultiTouchRef.current = true;
+                    if (e.touches.length > 1) {
+                      isMultiTouchRef.current = true;
+                      touchStartPosRef.current = null;
+                    } else if (e.touches.length === 1) {
+                      // タップかスワイプ/ドラッグかを終了時に見分けるため、開始位置を記録する
+                      touchStartPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                    }
                   },
                   onTouchMove: (e) => {
                     // タップ開始後に2本目の指が触れてもピンチ扱いにする（片手の指が後から追加されるケース）
-                    if (e.touches.length > 1) isMultiTouchRef.current = true;
+                    if (e.touches.length > 1) {
+                      isMultiTouchRef.current = true;
+                      touchStartPosRef.current = null;
+                    }
                   },
                   onTouchEnd: (e) => {
                     // まだ他の指が盤面に触れている、またはこのジェスチャーがピンチだった場合は
                     // 投擲として扱わない（ネイティブピンチズーム操作中に誤って点数が入るのを防ぐ）
                     if (e.touches.length > 0 || isMultiTouchRef.current) {
                       if (e.touches.length === 0) isMultiTouchRef.current = false;
+                      touchStartPosRef.current = null;
                       return;
+                    }
+                    // ピンチではなく1本指の操作でも、指が一定距離動いていればタップではなく
+                    // スワイプ/ドラッグ（盤面を眺めながら位置調整する動作等）とみなし、投擲扱いしない。
+                    // ズームを禁止するのではなく、意図しない誤タップだけを弾く形にしている。
+                    const start = touchStartPosRef.current;
+                    touchStartPosRef.current = null;
+                    if (start && e.changedTouches && e.changedTouches[0]) {
+                      const dx = e.changedTouches[0].clientX - start.x;
+                      const dy = e.changedTouches[0].clientY - start.y;
+                      if (Math.hypot(dx, dy) > 12) return;
                     }
                     handleBoardClick(e);
                   },
                   viewBox: "-210 -210 420 420",
                   className:
                     "w-full h-full drop-shadow-[0_15px_30px_rgba(0,0,0,0.95)] overflow-visible cursor-crosshair",
-                  // pinch-zoomを許可すると、フィルター(グロー/ブラー)を多用したこのSVGを
-                  // ネイティブズームで繰り返し再描画することになり、モバイルブラウザ
-                  // （特にiOS Safari）がメモリ圧迫でクラッシュするケースが確認された。
-                  // 数字の視認性は別途フォント色の修正で対応済みなので、ここは安全側に倒して
-                  // 盤面上でのピンチズームは無効化する（ページ全体のズームは引き続き可能）。
+                  // touch-action: "manipulation" は doubleタップズームだけを無効化し、
+                  // ピンチズームとパンは許可する。誤ってダーツが刺さる問題は自前実装の
+                  // ズーム機能で解決せず、タップ/スワイプ判定（上のonTouchEnd）側で対処している。
                   style: { touchAction: "manipulation" },
                 },
                 React.createElement(
@@ -2299,7 +2318,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                   [[1,"👤 1P"],[2,"👥 2P"]].map(([n,lbl]) =>
                     React.createElement("button", {
                       key: n,
-                      onClick: () => { playSound("click"); setPlayerCount(n); if(n===1) setCpuMode(false); },
+                      onClick: () => { playSound("click"); setPlayerCount(n); setCpuMode(false); },
                       className: `setup-toggle-btn py-2.5 ${playerCount === n && !cpuMode ? "setup-toggle-active" : "setup-toggle-inactive"}`,
                     }, lbl)
                   ),

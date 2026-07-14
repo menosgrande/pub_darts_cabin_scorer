@@ -7,7 +7,7 @@
   // ═══════════════════════════════════════════════════════════════════════
   const CPU_DIFFICULTY = {
     easy:   { numberAccuracy: 0.55, ringWeights: { single: 0.75, double: 0.22, triple: 0.03 }, dropChance: 0.40, dropDarts: 2, checkoutHitProb: 0.10 },
-    medium: { numberAccuracy: 0.72, ringWeights: { single: 0.35, double: 0.45, triple: 0.20 }, dropChance: 0.18, dropDarts: 1, checkoutHitProb: 0.30 },
+    medium: { numberAccuracy: 0.62, ringWeights: { single: 0.68, double: 0.25, triple: 0.07 }, dropChance: 0.24, dropDarts: 1, checkoutHitProb: 0.20 },
     hard:   { numberAccuracy: 0.85, ringWeights: { single: 0.08, double: 0.17, triple: 0.75 }, dropChance: 0.08, dropDarts: 1, checkoutHitProb: 0.60 },
     pro:    { numberAccuracy: 0.95, ringWeights: { single: 0.03, double: 0.07, triple: 0.90 }, dropChance: 0.02, dropDarts: 0, checkoutHitProb: 0.82 },
   };
