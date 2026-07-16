@@ -192,7 +192,7 @@ const { useState, useEffect, useRef, useMemo } = React;
     // 01: 現在の残り点数(バースト中はハイライトしない)で「あと1投で上がれる」セグメント一覧
     const finishTargets01 =
       gameMode === "01" && !roundState.isBust
-        ? getFinishTargets(roundState.remainingScore, outMode)
+        ? getFinishTargets(roundState.remainingScore, outMode, bullType)
         : [];
 
     // ── Cricketゲーム用: ライブのマーク/得点状態（打つたびに即時反映）
@@ -474,6 +474,18 @@ const { useState, useEffect, useRef, useMemo } = React;
               cpuMode,
               cpuDifficulty,
               helpLang,
+              // 01/クリケットのハンデ設定。復元しないとRESUME後にPLAY AGAIN/MENU→LEAVEした際、
+              // 既定値（AUTO・レーティング同値など）で再計算されて元のハンデ条件が消えてしまう
+              // （players[].initialScore/cricketMarksはlive状態としては復元されるが、
+              // 次戦を組み立てるsetup state自体は別管理のため、両方を保存する必要がある）。
+              autoHandicap01,
+              p1Rating,
+              p2Rating,
+              autoHandicapCricket,
+              manualCricketMarksP1,
+              manualCricketMarksP2,
+              manualCricketBonusP1,
+              manualCricketBonusP2,
               savedAt: Date.now(),
               version: CURRENT_SAVE_VERSION,
             }),
@@ -500,6 +512,14 @@ const { useState, useEffect, useRef, useMemo } = React;
       cpuMode,
       cpuDifficulty,
       helpLang,
+      autoHandicap01,
+      p1Rating,
+      p2Rating,
+      autoHandicapCricket,
+      manualCricketMarksP1,
+      manualCricketMarksP2,
+      manualCricketBonusP1,
+      manualCricketBonusP2,
       showSettingsSetup,
     ]);
 
@@ -1183,6 +1203,12 @@ const { useState, useEffect, useRef, useMemo } = React;
           if (save.o1MaxRounds !== undefined && save.maxRounds === undefined) {
             save.maxRounds = save.o1MaxRounds;
           }
+          // falls through
+        case 8:
+          // v8→v9: autoHandicap01/p1Rating/p2Rating/autoHandicapCricket/
+          // manualCricketMarksP1/P2/manualCricketBonusP1/P2 を新規追加。
+          // 旧セーブには存在しないが、handleRestoreSave側で未定義時のフォールバック
+          // （off・レーティング6・マーク全0・ボーナス0）を用意しているため変換不要。
           break;
         default:
           break;
@@ -1257,9 +1283,29 @@ const { useState, useEffect, useRef, useMemo } = React;
         if (d.players && d.players[0] && d.players[1]) {
           setP1StartScore(d.players[0].initialScore);
           setP2StartScore(d.players[1].initialScore);
-          // 手動クリケットハンデ(manualCricketMarksP1/P2, manualCricketBonusP1/P2)は
-          // p1Rating/p2Ratingと同様セットアップ画面専用の一時値なので、復元対象に含めない。
         }
+        // 01/クリケットのハンデ設定を復元。以前はここを復元していなかったため、
+        // RESUME後にPLAY AGAIN/MENU→LEAVEすると既定値(AUTO・レーティング同値など)で
+        // 再計算され、元のハンデ条件（手動501 vs 301、クリケットの手動マークなど）が
+        // 消えてしまうバグがあった。旧セーブ(v8以前)にはこれらのフィールドが無いので、
+        // 型・範囲を検証した上で安全なデフォルト値にフォールバックする。
+        setAutoHandicap01(d.autoHandicap01 === "dl2" ? "dl2" : "off");
+        setP1Rating(Number.isFinite(d.p1Rating) ? Math.min(17, Math.max(0, d.p1Rating)) : 6);
+        setP2Rating(Number.isFinite(d.p2Rating) ? Math.min(17, Math.max(0, d.p2Rating)) : 6);
+        setAutoHandicapCricket(d.autoHandicapCricket === "dl2" ? "dl2" : "off");
+        const sanitizeCricketMarks = (m) => {
+          const out = { 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0, 25: 0 };
+          if (m && typeof m === "object") {
+            for (const k of Object.keys(out)) {
+              if (Number.isFinite(m[k])) out[k] = Math.min(3, Math.max(0, m[k]));
+            }
+          }
+          return out;
+        };
+        setManualCricketMarksP1(sanitizeCricketMarks(d.manualCricketMarksP1));
+        setManualCricketMarksP2(sanitizeCricketMarks(d.manualCricketMarksP2));
+        setManualCricketBonusP1(Number.isFinite(d.manualCricketBonusP1) ? Math.max(0, d.manualCricketBonusP1) : 0);
+        setManualCricketBonusP2(Number.isFinite(d.manualCricketBonusP2) ? Math.max(0, d.manualCricketBonusP2) : 0);
         setHasRestorableSave(true);
         setShowSettingsSetup(false);
         return true;
@@ -2939,9 +2985,20 @@ const { useState, useEffect, useRef, useMemo } = React;
             ),
             (winner.countUpResult || winner.cricketResult)
               ? (() => {
+                  // 得点だけでソートすると、同点だが実際は勝者が別にいるケース（クリケットの
+                  // 同点クローズ勝ちなど）で、勝者の行はハイライトされるのに1位バッジは別の
+                  // プレイヤーに付く、という矛盾表示になっていた。isDrawでなければ勝者を
+                  // 必ず先頭に固定し、順位バッジと勝者ハイライトが一致するようにする。
                   const sortedScores = (winner.scores || [])
                     .slice()
-                    .sort((a, b) => b.score - a.score);
+                    .sort((a, b) => {
+                      if (!winner.isDraw) {
+                        const aIsWinner = a.name === winner.name;
+                        const bIsWinner = b.name === winner.name;
+                        if (aIsWinner !== bIsWinner) return aIsWinner ? -1 : 1;
+                      }
+                      return b.score - a.score;
+                    });
                   const leadScore = sortedScores[0] ? sortedScores[0].score : 0;
                   return React.createElement(
                     "div",

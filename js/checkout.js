@@ -524,16 +524,21 @@
   //   single(オープン) → シングル/ダブル/トリプル/Bull(25・50)どれでも可
   //   double           → ダブル、または50(ブルズアイ)のみ
   //   master           → ダブル or トリプル、または50のみ
+  // bullType(="fat"の50/50設定)ではouter bullも50点扱いになるため、残り50のとき
+  // outer/inner両方をターゲットに含める（fatでない"separate"はouterが25点のまま）。
   // ─────────────────────────────────────────────────────────────────────────
-  const getFinishTargets = (remaining, outMode) => {
+  const getFinishTargets = (remaining, outMode, bullType) => {
     const targets = [];
     if (!Number.isFinite(remaining) || remaining <= 0 || remaining > 60) return targets;
     const om = normalizeOutMode(outMode);
     const allowSingle = om === "single";
     const allowDouble = om === "single" || om === "double" || om === "master";
     const allowTriple = om === "single" || om === "master";
-    if (remaining === 50) targets.push({ num: 25, ring: "bullInner" }); // ブルズアイはどのアウト設定でも有効
-    if (allowSingle && remaining === 25) targets.push({ num: 25, ring: "bullOuter" });
+    if (remaining === 50) {
+      targets.push({ num: 25, ring: "bullInner" }); // ブルズアイはどのアウト設定でも有効
+      if (bullType === "fat") targets.push({ num: 25, ring: "bullOuter" }); // 50/50設定はouterも50点
+    }
+    if (allowSingle && bullType !== "fat" && remaining === 25) targets.push({ num: 25, ring: "bullOuter" });
     if (allowDouble && remaining % 2 === 0 && remaining / 2 >= 1 && remaining / 2 <= 20) {
       targets.push({ num: remaining / 2, ring: "double" });
     }

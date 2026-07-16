@@ -13,4 +13,4 @@
   const MAX_THROWS_PER_TURN = 3;
   const COUNT_UP_ROUNDS = 8;
   const LOCAL_STORAGE_KEY = "pub_darts_cabin_state_v5";
-  const CURRENT_SAVE_VERSION = 8; // セーブデータ構造のバージョン。上げたら migrateSaveData に変換処理を追加。
+  const CURRENT_SAVE_VERSION = 9; // セーブデータ構造のバージョン。上げたら migrateSaveData に変換処理を追加。
