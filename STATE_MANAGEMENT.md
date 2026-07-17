@@ -394,6 +394,24 @@ const [stats, setStats] = useState(...); // ✕ 二重管理の元
 
 ## 既知のバグと設計上の教訓（再発防止用）
 
+### タップ毎回ダーツが2本登録される（重大・修正済み）
+
+盤面のSVGに `onClick={handleBoardClick}` と、`onTouchEnd`内で`handleBoardClick(e)`を直接呼ぶ処理の**両方**が乗っていた。タッチデバイスでは`touchend`の後、ブラウザが互換性のために合成`click`イベントを追加で発火する。`onTouchEnd`側で`preventDefault()`していなかったため、この合成clickが素通りして`onClick`側の`handleBoardClick`も呼ばれ、**1回のタップでダーツが2本カウントされていた**（体感的には「ダブルタップしたみたいになる」）。
+
+`onTouchEnd`の一番最初で`e.preventDefault()`を呼ぶことで解決。tap/swipe/pinchのどの分岐に進む場合でも、必ず最初にpreventDefaultするようにしている（分岐の途中に置くと一部の早期returnパスだけ合成clickが素通りする穴が残るため）。
+
+**教訓**: 同一要素に`onClick`（マウス/合成クリック用）と`onTouch*`（タッチ専用）の両方でユーザー操作をハンドリングする実装は、タッチデバイス上で二重発火する典型的な罠。タッチイベント側で独自にアクションを実行するなら、`touchend`ハンドラの中で必ず`preventDefault()`して後続の合成clickを止めること。逆に、`onClick`だけに任せてタッチ操作の細かい制御（スワイプ判定等）を諦める設計であれば、`onTouch*`側では状態記録だけに留め、実際のアクション実行はしない、という役割分担も選択肢になる。今回は「スワイプ/ピンチを誤タップ扱いしない」という要件のため後者を選べず、前者（preventDefaultで二重発火を止める）で対応した。
+
+### ダーツマーカーの色分け（①青②緑③赤）と編集中インジケータの役割分離
+
+投数ごとにマーカーの色を変える機能を追加する際、以前は「編集中のダーツ」も専用の色（`#38bdf8`スカイブルー）で表現していた。1投目の色も同じ系統の青にすると、「これは1投目？それとも編集中？」の判別がつかなくなる。**色は投数の意味に固定し、編集中かどうかは別軸（縁取りの色）で表現する**ことで役割を分離した。
+
+**教訓**: 1つの視覚属性（色）に複数の意味を持たせようとすると、新しい分類軸を追加したときに必ず衝突する。「この色は何を表しているか」を機能追加前に棚卸ししておくと、後から次元を増やすときに詰まりにくい。
+
+### バースト後に追加のダーツが刺さらないようにする要件は、既に`canAddMoreThrows`で担保されている
+
+`canAddMoreThrows = editingThrowIndex !== null || (!roundState.isBust && !roundState.isFinished && currentThrows.length < MAX_THROWS_PER_TURN)` が、盤面タップ(`handleBoardClick`)とテンキー入力(`handleKeypadTap`)の両方の入口で `if (editingThrowIndex === null && !canAddMoreThrows) return;` としてガードされている。`getRoundState`は`throws`配列を先頭から走査し、1投目時点でオーバー/不正チェックアウトが起きた時点で即座に`isBust: true`を返すため、1投目・2投目どちらでバーストしても以降の入力は自動的にブロックされる。**このガードを外す・迂回する新しい入力経路（新しいボタンやショートカット等）を追加する際は、必ず`canAddMoreThrows`のチェックを踏襲すること。**
+
 ### CPU思考中のPREVがCPUのターンを永久に止める（修正済み）
 
 `handleUndoCommittedTurn`（PREV）は以前、確認ゲート（2段階確認の1回目）より**前**で無条件に `cancelCpuTimer()` を呼んでいた。CPU思考中にPREVを1回タップしただけ（確認せず放置）でもCPUの保留中タイマーが握り潰され、CPUの自動投擲は `useEffect([isCpuTurn])` で動いているため `isCpuTurn` が `true→true` のまま変化しない限り再発火せず、CPUのターンが二度と進まなくなっていた。
