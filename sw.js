@@ -3,7 +3,7 @@
 //
 // 更新方針: CACHE_NAME のバージョンを上げると、新しいSWがインストールされ、
 // 古いキャッシュは activate 時に破棄される。ファイルを更新したら CACHE_VERSION を上げること。
-const CACHE_VERSION = "v10"; // v10: タップ毎回ダーツが2本登録されるバグを修正（タッチ後の合成clickイベントをpreventDefaultで抑制）
+const CACHE_VERSION = "v11"; // v11: ダーツマーカーを投数ごとに色分け（①青②緑③赤+番号）
 const CACHE_NAME = `pdcs-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
