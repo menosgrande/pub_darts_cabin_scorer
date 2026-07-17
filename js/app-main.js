@@ -1917,28 +1917,45 @@ const { useState, useEffect, useRef, useMemo } = React;
                     })(),
                   );
                 })(),
-                /* ダーツマーカー: アクティブ投を大きく、完了投を小さく表示 */
+                /* ダーツマーカー: 何投目かが一目でわかるよう色分け（①青 ②緑 ③赤）+ 番号ラベル。
+                   編集中(タップして上書き対象に選んだ状態)は色ではなく金色の縁取りで示す
+                   （色を編集中の意味に使うと、投数の色分けと衝突するため役割を分けた）。 */
                 currentThrows.map((t, idx) => {
                   const isFocused = idx === editingThrowIndex;
                   const isLast = idx === currentThrows.length - 1;
-                  const r = isFocused ? 9 : isLast ? 8 : 6;
-                  const fill = isFocused
-                    ? "#38bdf8"
-                    : isLast
-                      ? "#fbbf24"
-                      : "#f59e0b";
-                  const sw = isFocused ? 3 : isLast ? 2.5 : 1.5;
-                  return React.createElement("circle", {
-                    key: idx,
-                    cx: t.x,
-                    cy: t.y,
-                    r,
-                    fill,
-                    stroke: "white",
-                    strokeWidth: sw,
-                    filter: "url(#marker-glow)",
-                    className: "transition-all duration-150",
-                  });
+                  const THROW_COLORS = ["#3b82f6", "#22c55e", "#ef4444"]; // 1投目/2投目/3投目
+                  const THROW_LABELS = ["①", "②", "③"];
+                  const fill = THROW_COLORS[idx] || "#f59e0b";
+                  const r = isFocused ? 9 : isLast ? 8 : 7;
+                  const sw = isFocused ? 3 : 2;
+                  return React.createElement(
+                    "g",
+                    { key: idx },
+                    React.createElement("circle", {
+                      cx: t.x,
+                      cy: t.y,
+                      r,
+                      fill,
+                      stroke: isFocused ? "#fde047" : "white",
+                      strokeWidth: sw,
+                      filter: "url(#marker-glow)",
+                      className: "transition-all duration-150",
+                    }),
+                    React.createElement(
+                      "text",
+                      {
+                        x: t.x,
+                        y: t.y,
+                        textAnchor: "middle",
+                        dominantBaseline: "central",
+                        fontSize: "8",
+                        fontWeight: "900",
+                        fill: "white",
+                        style: { pointerEvents: "none" },
+                      },
+                      THROW_LABELS[idx] || String(idx + 1),
+                    ),
+                  );
                 }),
               ),
               /* Corner buttons removed - using action bar below */
