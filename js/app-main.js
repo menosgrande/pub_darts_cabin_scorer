@@ -1625,6 +1625,11 @@ const { useState, useEffect, useRef, useMemo } = React;
                     }
                   },
                   onTouchEnd: (e) => {
+                    // タッチ操作の後、ブラウザは互換性のためclickイベントも合成して発火する。
+                    // これを毎回ここで止めておかないと、tap/swipe/pinchのどのケースでも
+                    // 直後にonClick(=handleBoardClick)が余分に呼ばれる可能性がある
+                    // （スマホで「ダブルタップしたみたいになる」不具合の原因）。
+                    e.preventDefault();
                     // まだ他の指が盤面に触れている、またはこのジェスチャーがピンチだった場合は
                     // 投擲として扱わない（ネイティブピンチズーム操作中に誤って点数が入るのを防ぐ）
                     if (e.touches.length > 0 || isMultiTouchRef.current) {
