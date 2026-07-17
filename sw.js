@@ -3,7 +3,7 @@
 //
 // 更新方針: CACHE_NAME のバージョンを上げると、新しいSWがインストールされ、
 // 古いキャッシュは activate 時に破棄される。ファイルを更新したら CACHE_VERSION を上げること。
-const CACHE_VERSION = "v9"; // v9: RESUME後のハンデ消失・クリケット同点順位表示・50/50Bullハイライトの3バグ修正
+const CACHE_VERSION = "v10"; // v10: タップ毎回ダーツが2本登録されるバグを修正（タッチ後の合成clickイベントをpreventDefaultで抑制）
 const CACHE_NAME = `pdcs-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
