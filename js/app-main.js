@@ -556,6 +556,14 @@ const { useState, useEffect, useRef, useMemo } = React;
           window.AudioContext || window.webkitAudioContext
         )();
     };
+    // ダーツ入力の確定を触覚でも伝える。暗所・飲酒時のプレイでも「入力できた」が
+    // 指先だけで確信できるようにする（Vibration API非対応のブラウザ、特にiOS Safariでは
+    // navigator.vibrateが存在しないので何もしない＝安全に無視される）。
+    const triggerHaptic = (duration = 10) => {
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        try { navigator.vibrate(duration); } catch (e) {}
+      }
+    };
     const playSound = (type) => {
       if (!soundEnabled) return;
       try {
@@ -800,6 +808,7 @@ const { useState, useEffect, useRef, useMemo } = React;
         return;
       if (editingThrowIndex === null && !canAddMoreThrows) return;
       initAudio();
+      triggerHaptic(10);
       const activeMult =
         specifiedMult !== undefined ? specifiedMult : padMultiplier;
       let finalMult = activeMult,
@@ -871,6 +880,7 @@ const { useState, useEffect, useRef, useMemo } = React;
       if (editingThrowIndex === null && !canAddMoreThrows) return;
       if (!boardRef.current) return;
       initAudio();
+      triggerHaptic(10);
       const rect = boardRef.current.getBoundingClientRect();
       const cx = rect.left + rect.width / 2,
         cy = rect.top + rect.height / 2,
@@ -1739,7 +1749,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                   //    緑白く光らせる。アウト設定(outMode)によって有効なリングが変わる。 ──
                   const finish01 =
                     gameMode === "01" && !winner && confirmStage !== "gameover" && confirmStage !== "next"
-                      ? finishTargets01.find((t) => t.num === w && (t.ring === "double" || t.ring === "triple"))
+                      ? finishTargets01.find((t) => t.num === w && (t.ring === "double" || t.ring === "triple" || t.ring === "single"))
                       : null;
                   const myMarksAll = activePlayerIndex === 0 ? p1CricketMarks : p2CricketMarks;
                   const oppMarksAll = activePlayerIndex === 0 ? p2CricketMarks : p1CricketMarks;
@@ -1793,7 +1803,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                       stroke: "#4ade80",
                       strokeWidth: "1.2",
                       filter: "url(#marker-glow)",
-                      className: "finish-target-pulse",
+                      className: "finish-target-glow",
                     }),
                     finish01 && finish01.ring === "triple" && React.createElement("path", {
                       d: bp(90, 112),
@@ -1802,7 +1812,27 @@ const { useState, useEffect, useRef, useMemo } = React;
                       stroke: "#4ade80",
                       strokeWidth: "1.2",
                       filter: "url(#marker-glow)",
-                      className: "finish-target-pulse",
+                      className: "finish-target-glow",
+                    }),
+                    // シングルは盤面上に2箇所ある（ブルとトリプルの間の内側、トリプルとダブルの間の外側）。
+                    // どちらに刺さってもシングルとして成立するので両方光らせる。
+                    finish01 && finish01.ring === "single" && React.createElement("path", {
+                      d: bp(112, 154),
+                      fill: "#ecfdf5",
+                      opacity: 0.75,
+                      stroke: "#4ade80",
+                      strokeWidth: "1.2",
+                      filter: "url(#marker-glow)",
+                      className: "finish-target-glow",
+                    }),
+                    finish01 && finish01.ring === "single" && React.createElement("path", {
+                      d: bp(22, 90),
+                      fill: "#ecfdf5",
+                      opacity: 0.75,
+                      stroke: "#4ade80",
+                      strokeWidth: "1.2",
+                      filter: "url(#marker-glow)",
+                      className: "finish-target-glow",
                     }),
                     // 対象外 or 両者クローズ済み → 暗く沈める
                     dim && React.createElement("path", { d: bp(22, 176), fill: "#000", opacity: 0.6 }),
@@ -1887,11 +1917,11 @@ const { useState, useEffect, useRef, useMemo } = React;
                     // 01: Bullで上がれる場合の緑白ハイライト
                     finishTargets01.some((t) => t.ring === "bullOuter") && React.createElement("circle", {
                       r: 22, fill: "#ecfdf5", opacity: 0.75, stroke: "#4ade80", strokeWidth: "1.2",
-                      filter: "url(#marker-glow)", className: "finish-target-pulse",
+                      filter: "url(#marker-glow)", className: "finish-target-glow",
                     }),
                     finishTargets01.some((t) => t.ring === "bullInner") && React.createElement("circle", {
                       r: 8.5, fill: "#ecfdf5", opacity: 0.75, stroke: "#4ade80", strokeWidth: "1.2",
-                      filter: "url(#marker-glow)", className: "finish-target-pulse",
+                      filter: "url(#marker-glow)", className: "finish-target-glow",
                     }),
                     gameMode === "cricket" && (() => {
                       const p1mRaw = p1CricketMarks[25] || 0;
@@ -2162,18 +2192,27 @@ const { useState, useEffect, useRef, useMemo } = React;
                       className:
                         "grid grid-cols-6 gap-1.5 bg-amber-500/5 p-1.5 rounded-xl border border-amber-500/10",
                     },
-                    [20, 19, 18, 17, 16, 15].map((n) =>
-                      React.createElement(
+                    [20, 19, 18, 17, 16, 15].map((n) => {
+                      // 01: 現在選択中の倍率(S/D/T)でこの数字を打てば上がれる場合はハイライトする
+                      const ringForMult = padMultiplier === 2 ? "double" : padMultiplier === 3 ? "triple" : "single";
+                      const isFinishKey =
+                        gameMode === "01" && !winner && confirmStage !== "gameover" && confirmStage !== "next" &&
+                        finishTargets01.some((t) => t.num === n && t.ring === ringForMult);
+                      return React.createElement(
                         "button",
                         {
                           key: n,
                           onClick: () => handleKeypadTap(n),
                           className:
-                            "w-11 h-11 md:w-[52px] md:h-[52px] rounded-xl flex items-center justify-center font-black font-mono text-sm md:text-base bg-zinc-950 border border-amber-500/25 text-amber-300 hover:border-amber-400 active:translate-y-0.5 transition-all shadow-[0_4px_10px_rgba(0,0,0,0.5)] cursor-pointer",
+                            `w-11 h-11 md:w-[52px] md:h-[52px] rounded-xl flex items-center justify-center font-black font-mono text-sm md:text-base active:translate-y-0.5 transition-all cursor-pointer ${
+                              isFinishKey
+                                ? "bg-emerald-950/60 border-2 border-emerald-400 text-emerald-300 shadow-[0_0_10px_rgba(74,222,128,0.5)]"
+                                : "bg-zinc-950 border border-amber-500/25 text-amber-300 hover:border-amber-400 shadow-[0_4px_10px_rgba(0,0,0,0.5)]"
+                            }`,
                         },
                         n,
-                      ),
-                    ),
+                      );
+                    }),
                   ),
                   gameMode !== "cricket" && React.createElement(
                     "div",
@@ -2182,16 +2221,25 @@ const { useState, useEffect, useRef, useMemo } = React;
                         "grid grid-cols-5 gap-1.5 justify-items-center",
                     },
                     [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map(
-                      (n) =>
-                        React.createElement(
+                      (n) => {
+                        const ringForMult = padMultiplier === 2 ? "double" : padMultiplier === 3 ? "triple" : "single";
+                        const isFinishKey =
+                          n !== 0 && gameMode === "01" && !winner && confirmStage !== "gameover" && confirmStage !== "next" &&
+                          finishTargets01.some((t) => t.num === n && t.ring === ringForMult);
+                        return React.createElement(
                           "button",
                           {
                             key: n,
                             onClick: () => handleKeypadTap(n),
-                            className: `w-11 h-11 md:w-[52px] md:h-[52px] rounded-xl flex items-center justify-center font-black font-mono text-sm md:text-base active:translate-y-0.5 transition-all cursor-pointer shadow-[0_4px_10px_rgba(0,0,0,0.5)] border ${n === 0 ? "bg-[#18181f] border-rose-900/60 text-rose-400 hover:bg-[#23232b]" : "bg-zinc-950 border-zinc-800 text-zinc-200 hover:border-zinc-500"}`,
+                            className: `w-11 h-11 md:w-[52px] md:h-[52px] rounded-xl flex items-center justify-center font-black font-mono text-sm md:text-base active:translate-y-0.5 transition-all cursor-pointer shadow-[0_4px_10px_rgba(0,0,0,0.5)] border ${
+                              isFinishKey
+                                ? "bg-emerald-950/60 border-2 border-emerald-400 text-emerald-300 shadow-[0_0_10px_rgba(74,222,128,0.5)]"
+                                : n === 0 ? "bg-[#18181f] border-rose-900/60 text-rose-400 hover:bg-[#23232b]" : "bg-zinc-950 border-zinc-800 text-zinc-200 hover:border-zinc-500"
+                            }`,
                           },
                           n,
-                        ),
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -2207,7 +2255,12 @@ const { useState, useEffect, useRef, useMemo } = React;
                   {
                     onClick: () => handleKeypadTap(25, 1, "outer"),
                     className:
-                      "flex-1 rounded-xl font-mono font-black uppercase border-2 flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 border-[#16a34a] text-[#16a34a] hover:bg-emerald-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)]",
+                      `flex-1 rounded-xl font-mono font-black uppercase border-2 flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 text-[#16a34a] hover:bg-emerald-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)] ${
+                        gameMode === "01" && !winner && confirmStage !== "gameover" && confirmStage !== "next" &&
+                        finishTargets01.some((t) => t.ring === "bullOuter")
+                          ? "border-emerald-300 shadow-[0_0_10px_rgba(74,222,128,0.5)]"
+                          : "border-[#16a34a]"
+                      }`,
                     title:
                       bullType === "fat" ? "Outer Bull 50" : "Outer Bull 25",
                   },
@@ -2259,7 +2312,12 @@ const { useState, useEffect, useRef, useMemo } = React;
                   {
                     onClick: () => handleKeypadTap(25, 2, "inner"),
                     className:
-                      "flex-1 rounded-xl font-mono font-black uppercase border flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 border-rose-900/70 text-rose-400 hover:bg-rose-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)]",
+                      `flex-1 rounded-xl font-mono font-black uppercase border flex flex-col justify-center items-center gap-1 active:translate-y-0.5 transition-all cursor-pointer bg-zinc-950 text-rose-400 hover:bg-rose-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.4)] ${
+                        gameMode === "01" && !winner && confirmStage !== "gameover" && confirmStage !== "next" &&
+                        finishTargets01.some((t) => t.ring === "bullInner")
+                          ? "border-2 border-emerald-300 shadow-[0_0_10px_rgba(74,222,128,0.5)]"
+                          : "border-rose-900/70"
+                      }`,
                     title: "Inner Bull 50",
                   },
                   React.createElement(
