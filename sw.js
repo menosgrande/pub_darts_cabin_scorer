@@ -3,7 +3,7 @@
 //
 // 更新方針: CACHE_NAME のバージョンを上げると、新しいSWがインストールされ、
 // 古いキャッシュは activate 時に破棄される。ファイルを更新したら CACHE_VERSION を上げること。
-const CACHE_VERSION = "v13"; // v13: 触覚フィードバック追加、テンキーにも上がり目ハイライト連動
+const CACHE_VERSION = "v15"; // v15: HARD/PROのD20誤射率を修正、クイックスタートをOpen Outに変更、iPhoneノッチ対応
 const CACHE_NAME = `pdcs-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
