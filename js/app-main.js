@@ -688,7 +688,7 @@ const { useState, useEffect, useRef, useMemo } = React;
       setMaxRounds(30);
       let p1StartVal = 501, p2StartVal = 501, p1Marks, p2Marks;
       if (mode === "01") {
-        setOutMode("double");
+        setOutMode("single");
         setCheckoutPref("double");
         setP1StartScore(501);
         setP2StartScore(501);
@@ -803,6 +803,29 @@ const { useState, useEffect, useRef, useMemo } = React;
     };
 
     // ── キーパッドタップ ──
+    // ダーツ1本を確定させる共通処理。盤面タップ・テンキー入力どちらも最終的にここへ集約する。
+    // 「score/multiplier/x/y/label/isBull」を持つオブジェクトを渡すだけでよいので、
+    // 将来カメラ等の別入力源（画像認識で検出したダーツ）を追加する場合も、
+    // 検出結果をこの形に変換してcommitThrow()を呼ぶだけで済む設計にしてある。
+    const commitThrow = (t) => {
+      const nThrows =
+        editingThrowIndex !== null
+          ? currentThrows.map((th, i) => (i === editingThrowIndex ? t : th))
+          : [...currentThrows, t];
+      setCurrentThrowsImmediate(nThrows);
+      if (editingThrowIndex !== null) setEditingThrowIndex(null);
+      playSound(getHitSoundType(t));
+      if (
+        gameMode === "01" &&
+        getRoundState(
+          activePlayer.remainingScore,
+          nThrows,
+          normalizeOutMode(outMode),
+        ).isBust
+      )
+        playSound("burst");
+    };
+
     const handleKeypadTap = (score, specifiedMult, isBullType) => {
       if (winner || confirmStage === "next" || confirmStage === "gameover" || isCpuTurn)
         return;
@@ -855,22 +878,7 @@ const { useState, useEffect, useRef, useMemo } = React;
         ry = Math.round(d * Math.sin(a));
       }
       const nT = { score, multiplier: finalMult, x: rx, y: ry, label, isBull };
-      const nThrows =
-        editingThrowIndex !== null
-          ? currentThrows.map((t, i) => (i === editingThrowIndex ? nT : t))
-          : [...currentThrows, nT];
-      setCurrentThrowsImmediate(nThrows);
-      if (editingThrowIndex !== null) setEditingThrowIndex(null);
-      playSound(getHitSoundType(nT));
-      if (
-        gameMode === "01" &&
-        getRoundState(
-          activePlayer.remainingScore,
-          nThrows,
-          normalizeOutMode(outMode),
-        ).isBust
-      )
-        playSound("burst");
+      commitThrow(nT);
     };
 
     // ── ボードクリック ──
@@ -900,22 +908,7 @@ const { useState, useEffect, useRef, useMemo } = React;
         (clientY - cy) / scale,
         bullType,
       );
-      const nThrows =
-        editingThrowIndex !== null
-          ? currentThrows.map((t, i) => (i === editingThrowIndex ? ct : t))
-          : [...currentThrows, ct];
-      setCurrentThrowsImmediate(nThrows);
-      if (editingThrowIndex !== null) setEditingThrowIndex(null);
-      playSound(getHitSoundType(ct));
-      if (
-        gameMode === "01" &&
-        getRoundState(
-          activePlayer.remainingScore,
-          nThrows,
-          normalizeOutMode(outMode),
-        ).isBust
-      )
-        playSound("burst");
+      commitThrow(ct);
     };
 
     const cancelCpuTimer = () => {
@@ -1384,12 +1377,17 @@ const { useState, useEffect, useRef, useMemo } = React;
           "fixed inset-0 bg-gradient-to-b from-zinc-950 via-[#0a0a0f] to-[#040406] z-0 pointer-events-none",
       }),
 
-      /* ── Header ── */
+      /* ── Header ──
+         PWAとしてホーム画面から起動すると、standalone表示ではブラウザのUIが消えて
+         ノッチ/Dynamic Island付近までコンテンツが伸びる。style="{paddingTop: ...}"で
+         env(safe-area-inset-top)ぶんだけ余白を足し、ヘッダーが隠れないようにする
+         （index.htmlのviewport-fit=coverと対で必要）。 */
       React.createElement(
         "header",
         {
           className:
             "relative z-30 border-b border-zinc-900/80 bg-[#09090c]/90 backdrop-blur-md px-3.5 py-2.5 flex items-center justify-between shrink-0 shadow-[0_8px_24px_rgba(0,0,0,0.3)]",
+          style: { paddingTop: "calc(0.625rem + env(safe-area-inset-top))" },
         },
         React.createElement(
           "div",
@@ -2560,7 +2558,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                     "div",
                     { className: "grid grid-cols-3 gap-2" },
                     [
-                      ["01", "501", "⚡", "Double Out"],
+                      ["01", "501", "⚡", "Open Out"],
                       ["cricket", "CRICKET", "🎯", "No Handicap"],
                       ["countup", "COUNT-UP", "📈", `${COUNT_UP_ROUNDS} Rounds`],
                     ].map(([mode, label, icon, caption]) =>

@@ -14,12 +14,19 @@
   //   PRO    ≒ レーティング14 （01スタッツ102〜109、AAフライト）      目標PPD ≒ 35
   // 以前の設定はHARD/PROが理論値でPPD 45〜55（レーティング17〜18＝トップ選手級）まで
   // 出てしまっており、「PROはともかくHARDまで強すぎる」という状態だった。
+  //
+  // HARD/PROはトリプルを主軸に狙う想定だが、以前はring Weights.doubleが30%超あり、
+  // 「トリプルを狙って大きく外れ、一番外側のダブルリングまで飛ぶ」確率が現実離れして高かった。
+  // 実際のダーツでは、トリプル(内側の細いリング)の近くには広いシングルエリアがすぐ隣接しており、
+  // 近い外しはほぼシングルに収まる。ダブル(一番外側の細いリング)まで飛ぶのは、シングルエリア
+  // 全体を飛び越える大きな外しなので稀にしか起きない。doubleの割合を大きく下げ、
+  // その分はsingle(近い外し)側に振った（PPDのバランスはtripleの割合をやや上げて維持）。
   // ═══════════════════════════════════════════════════════════════════════
   const CPU_DIFFICULTY = {
     easy:   { numberAccuracy: 0.65, ringWeights: { single: 0.78, double: 0.19, triple: 0.03 }, dropChance: 0.35, dropDarts: 2, checkoutHitProb: 0.15 },
-    medium: { numberAccuracy: 0.70, ringWeights: { single: 0.62, double: 0.30, triple: 0.08 }, dropChance: 0.22, dropDarts: 1, checkoutHitProb: 0.22 },
-    hard:   { numberAccuracy: 0.72, ringWeights: { single: 0.38, double: 0.37, triple: 0.25 }, dropChance: 0.12, dropDarts: 1, checkoutHitProb: 0.38 },
-    pro:    { numberAccuracy: 0.78, ringWeights: { single: 0.18, double: 0.32, triple: 0.50 }, dropChance: 0.05, dropDarts: 0, checkoutHitProb: 0.55 },
+    medium: { numberAccuracy: 0.70, ringWeights: { single: 0.70, double: 0.22, triple: 0.08 }, dropChance: 0.22, dropDarts: 1, checkoutHitProb: 0.22 },
+    hard:   { numberAccuracy: 0.72, ringWeights: { single: 0.45, double: 0.10, triple: 0.45 }, dropChance: 0.12, dropDarts: 1, checkoutHitProb: 0.38 },
+    pro:    { numberAccuracy: 0.78, ringWeights: { single: 0.30, double: 0.05, triple: 0.65 }, dropChance: 0.05, dropDarts: 0, checkoutHitProb: 0.55 },
   };
 
   // ═══════════════════════════════════════════════════════════════════════
