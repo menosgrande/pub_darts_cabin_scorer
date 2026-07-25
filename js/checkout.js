@@ -420,8 +420,7 @@
       rTripleInner = 91,
       rTripleOuter = 111,
       rDoubleInner = 153,
-      rDoubleOuter = 170,
-      rOOB = 188;
+      rDoubleOuter = 170;
     // D-Bull = 50点固定。multiplier:1 にしないと getSubtotal で 100点になる
     if (r <= rBullseye)
       return { score: 50, multiplier: 1, x, y, label: "D-Bull", isBull: true };
@@ -441,7 +440,9 @@
     } else if (r >= rDoubleInner && r <= rDoubleOuter) {
       multiplier = 2;
       label = `D${scoreNum}`;
-    } else if (r > rOOB) {
+    } else if (r > rDoubleOuter) {
+      // ダブルリング外側(盤外の縁・番号ラベル部分)。以前は"else"に落ちてSingle扱い
+      // になっていたが、実際の盤面外なのでMissが正しい。
       score = 0;
       multiplier = 0;
       label = "Miss";

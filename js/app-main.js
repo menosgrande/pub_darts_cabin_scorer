@@ -705,14 +705,7 @@ const { useState, useEffect, useRef, useMemo } = React;
         setCuRounds(COUNT_UP_ROUNDS);
       }
       // p2Name算出はhandleStartGameと同じロジック（1P/2P/CPUの現在値をそのまま使う）
-      const cpuLabel = `CPU (${cpuDifficulty.toUpperCase()})`;
-      // 1P時は「---」を実際の名前としてplayers[1].nameに保存しない。
-      // ここで保存すると、後で2Pに切り替えた時にセットアップ画面の名前入力欄に
-      // 「---」がそのまま表示されてしまう（players[1].nameを直接bindしているため）。
-      // 1Pゲーム中はplayers[1]自体がUI上どこにも表示されないので、既存の名前をただ保持すればよい。
-      const p2Name = cpuMode
-        ? cpuLabel
-        : (players[1] && players[1].name.trim()) || "PLAYER 2";
+      const p2Name = resolveP2Name(cpuMode, cpuDifficulty, players);
       setPlayers([
         makePlayer("p1", players[0].name.trim() || "PLAYER 1", p1StartVal, p1Marks, 0, 0),
         makePlayer("p2", p2Name, p2StartVal, p2Marks, 0, 0),
@@ -780,8 +773,7 @@ const { useState, useEffect, useRef, useMemo } = React;
       playSound("revert");
       clearSavedGame();
       const p2IsHuman = !cpuMode && playerCount >= 2;
-      const cpuLabel = `CPU (${cpuDifficulty.toUpperCase()})`;
-      const p2Name = cpuMode ? cpuLabel : (players[1].name.trim() || "PLAYER 2");
+      const p2Name = resolveP2Name(cpuMode, cpuDifficulty, players);
       const auto01 = computeAuto01Scores();
       const crSetup = computeCricketSetup();
       setPlayers([
@@ -807,6 +799,18 @@ const { useState, useEffect, useRef, useMemo } = React;
     // 「score/multiplier/x/y/label/isBull」を持つオブジェクトを渡すだけでよいので、
     // 将来カメラ等の別入力源（画像認識で検出したダーツ）を追加する場合も、
     // 検出結果をこの形に変換してcommitThrow()を呼ぶだけで済む設計にしてある。
+    // P2の名前を決定する共通ヘルパー。CPU対戦中は"CPU (難易度)"、そうでなければ人間の入力名。
+    // 以前は各呼び出し側が個別に `cpuMode ? cpuLabel : players[1].name` を計算していたため、
+    // 「CPU対戦後にCPUをOFFにして新規開始すると、players[1].nameに残った"CPU (PRO)"が
+    // そのまま人間プレイヤー2の名前として使われてしまう」バグが複数箇所で再発していた。
+    // ここで一元化し、CPUラベルらしき名前は必ず空扱いにする。
+    const resolveP2Name = (cpuModeNow, cpuDifficultyNow, playersNow) => {
+      if (cpuModeNow) return `CPU (${cpuDifficultyNow.toUpperCase()})`;
+      const raw = (playersNow[1] && playersNow[1].name || "").trim();
+      const looksLikeCpuLabel = /^CPU\s*\(/i.test(raw);
+      return (!looksLikeCpuLabel && raw) || "PLAYER 2";
+    };
+
     const commitThrow = (t) => {
       const nThrows =
         editingThrowIndex !== null
@@ -893,16 +897,20 @@ const { useState, useEffect, useRef, useMemo } = React;
       const cx = rect.left + rect.width / 2,
         cy = rect.top + rect.height / 2,
         scale = rect.width / 420;
+      // e.clientX/Yが0の場合(画面のちょうど左端/上端)も有効な座標なので、
+      // ||でフォールバックすると誤って0扱いされてしまう。typeof判定にする。
       const clientX =
-        e.clientX ||
-        (e.changedTouches && e.changedTouches[0]
-          ? e.changedTouches[0].clientX
-          : 0);
+        typeof e.clientX === "number"
+          ? e.clientX
+          : e.changedTouches && e.changedTouches[0]
+            ? e.changedTouches[0].clientX
+            : 0;
       const clientY =
-        e.clientY ||
-        (e.changedTouches && e.changedTouches[0]
-          ? e.changedTouches[0].clientY
-          : 0);
+        typeof e.clientY === "number"
+          ? e.clientY
+          : e.changedTouches && e.changedTouches[0]
+            ? e.changedTouches[0].clientY
+            : 0;
       const ct = getThrowFromCoords(
         (clientX - cx) / scale,
         (clientY - cy) / scale,
@@ -1339,10 +1347,7 @@ const { useState, useEffect, useRef, useMemo } = React;
       cancelCpuTimer();
       playSound("revert");
       clearSavedGame();
-      const cpuLabel = `CPU (${cpuDifficulty.toUpperCase()})`;
-      const p2Name = cpuMode
-        ? cpuLabel
-        : players[1].name.trim() || "PLAYER 2";
+      const p2Name = resolveP2Name(cpuMode, cpuDifficulty, players);
       const auto01b = computeAuto01Scores();
       const crSetupB = computeCricketSetup();
       setPlayers([

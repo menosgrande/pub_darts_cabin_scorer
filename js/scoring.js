@@ -245,8 +245,14 @@
     const openForMe = CRICKET_TARGETS.filter((k) => (live.marks[k] || 0) < 3);
     const label = (k) => (k === 25 ? "BULL" : String(k));
     if (openForMe.length === 0) {
+      // ソロプレイ(opponentsMarks.length===0)で自分が全ナンバーを閉じ切った場合は
+      // 既に勝利条件を満たしているので、まだ狙う先があるかのような
+      // "SCORE ON 20" ではなく、決着間近であることが分かる文言にする。
+      if (opponentsMarks.length === 0) {
+        return { text: "ALL CLOSED", sub: `SCORE ${live.score} · OK to finish`, color: "text-emerald-300", pulse: true };
+      }
       const scorable = CRICKET_TARGETS.filter(
-        (k) => opponentsMarks.length === 0 || !opponentsMarks.every((om) => (om[k] || 0) >= 3),
+        (k) => !opponentsMarks.every((om) => (om[k] || 0) >= 3),
       );
       if (scorable.length === 0) {
         return { text: "ALL CLOSED", sub: `SCORE ${live.score}`, color: "text-amber-300", pulse: false };

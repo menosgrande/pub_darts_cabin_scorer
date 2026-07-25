@@ -319,8 +319,7 @@
       },
       React.createElement(
         "div",
-        // BUSTオーバーレイはスコア部分のみに限定する（履歴を覆わないよう relative をここに持たせる）
-        { className: "relative" },
+        null,
         React.createElement(
           "div",
           { className: "mb-1.5 px-0.5" },
@@ -350,24 +349,31 @@
                 ),
               ),
         ),
-        React.createElement(FliqloScoreboard, {
-          score: displayScore,
-          isActive,
-          isBust,
-        }),
-        // BUST強調オーバーレイ（スコア部分の親divのみを覆う。履歴(history)は対象外）
-        isBust && React.createElement(
+        // BUSTオーバーレイはスコア部分(FliqloScoreboard)だけを覆う。relativeをここに
+        // 持たせることで、banner(名前/YOUR TURN表示)はBUSTの赤いオーバーレイの影響を受けない
+        // （以前はbannerも同じrelativeコンテナに入っていたため、BUST時にbannerまで覆われ、
+        // プレイヤー名が読めなくなっていた）。
+        React.createElement(
           "div",
-          {
-            className: "absolute inset-0 flex items-center justify-center bg-rose-600/90 backdrop-blur-sm rounded-2xl z-10 pointer-events-none"
-          },
-          React.createElement(
-            "span",
+          { className: "relative" },
+          React.createElement(FliqloScoreboard, {
+            score: displayScore,
+            isActive,
+            isBust,
+          }),
+          isBust && React.createElement(
+            "div",
             {
-              className: "text-4xl font-black text-white tracking-[0.1em] animate-pulse drop-shadow-2xl"
+              className: "absolute inset-0 flex items-center justify-center bg-rose-600/90 backdrop-blur-sm rounded-2xl z-10 pointer-events-none"
             },
-            "BUST"
-          )
+            React.createElement(
+              "span",
+              {
+                className: "text-4xl font-black text-white tracking-[0.1em] animate-pulse drop-shadow-2xl"
+              },
+              "BUST"
+            )
+          ),
         ),
       ),
       React.createElement(
