@@ -1,0 +1,8 @@
+{
+  "name": "pub-darts-cabin-scorer",
+  "private": true,
+  "description": "ゼロ依存のブラウザ完結ダーツスコアリングPWA。このpackage.jsonはNode組み込みテストランナー(node:test)を回すためだけのもので、アプリ本体はビルド不要・依存パッケージなしのまま。",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}
