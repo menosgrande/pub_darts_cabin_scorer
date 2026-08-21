@@ -425,7 +425,7 @@ const [stats, setStats] = useState(...); // ✕ 二重管理の元
 
 ### 7. その他、直す価値がありそうな点（優先度順）
 
-1. **テストが0件**: `getRoundState`/`applyCricketDart`/`findCheckoutRoute`/`computeAuto01Scores`/`getFinishTargets`などは引数を渡せば結果が返る純粋関数に近く、テストを書くコストの割に効果が高い。この会話で繰り返し踏んだ「片方の経路だけ直して、もう片方に同じ穴が残っている」系のバグ（RESUME後のハンデ消失、CPUの名前漏れ等）は、ユニットテストがあれば機械的に検出できたタイプのものが多い
+1. ~~**テストが0件**: `getRoundState`/`applyCricketDart`/`findCheckoutRoute`/`computeAuto01Scores`/`getFinishTargets`などは引数を渡せば結果が返る純粋関数に近く、テストを書くコストの割に効果が高い。~~ **対応済み**: `tests/`配下にNode組み込み`node:test`ベースのテストを追加（`getThrowFromCoords`/`getRoundState`/クリケットのmark/overflow判定、計34件）。`vm`モジュールで実ファイル(`constants.js`/`checkout.js`/`scoring.js`)をそのまま読み込む方式にし、ロジックの書き写しはしていない。`npm test`または`node --test tests/*.test.js`で実行。`findCheckoutRoute`/`computeAuto01Scores`/`getFinishTargets`は未カバーのまま残っているので、次に手を入れる際はここから追加するとよい。
 2. **CPU側のコミット処理が人間側（`commitThrow`）と別実装のまま**: 上記6番の変更と合わせて見直す余地がある。stateの非同期更新の都合上、完全に同一関数にはまとめにくいが、少なくとも「1投分のダーツオブジェクトを作る」部分は共通化できる可能性がある
 3. **app-main.jsが依然3179行**: checkout/scoring/cpu/ui-componentsには分割済みだが、`function App()`本体は1つの巨大なコンポーネントのまま。セットアップ画面・プレイ画面・リザルト画面をサブコンポーネントに分ける余地はあるが、機能追加がまだ続いている間は急がなくてよい
 
@@ -458,6 +458,12 @@ const [stats, setStats] = useState(...); // ✕ 二重管理の元
 `getThrowFromCoords`のリング判定が `r > rOOB`（盤の縁よりさらに外）だけをMiss扱いにしており、`rDoubleOuter`〜`rOOB`の間（盤の縁・番号ラベルが描かれている領域）が`else`に落ちてSingle扱いになっていた。`r > rDoubleOuter`は全てMissに統一。
 
 **教訓**: `if/else if/.../else`の判定チェーンで、`else`が「その他全部」を意味してしまう設計は、境界値の考慮漏れに気づきにくい。特にUIの見た目（何が描画されているか）とスコア判定の境界がズレていないか、実際の半径の数値を並べて確認する必要がある。
+
+### 判定側のリング半径定数が描画側とズレていた（修正済み・上記バグの再発）
+
+上の「盤面外側がSingle扱い」バグを`r > rDoubleOuter`で塞いだ後も、`rTripleInner/Outer`(91/111)・`rDoubleInner/Outer`(153/170)という判定側の半径自体が、盤面描画側(`app-main.js`の`bp()`呼び出し。Single内側=22-90、Triple=90-112、Single外側=112-154、Double=154-176)と1〜6ズレたままだった。特にDouble外側は判定170・描画176で6のズレがあり、**見た目はDoubleの帯の中なのに判定はMissになる領域**が実際に存在していた。`getThrowFromCoords`側の定数を描画側の値(90/112/154/176)に完全一致させて修正し、`tests/getThrowFromCoords.test.js`に境界値テストを追加して再発を機械的に検知できるようにした。
+
+**教訓**: 「盤外判定の抜け」と「リング境界の数値そのものが描画とズレている」は別種のバグで、片方を直しても他方は直らない。見た目と判定の整合性を確認するときは、`else`の網羅性だけでなく、両側で使っている具体的な数値（半径・角度）を並べて突き合わせる必要がある。今回はテストを追加したことで、旧定数に戻すと3件のテストが確実に落ちることを確認済み。
 
 ### BUSTオーバーレイがプレイヤー名バナーまで覆っていた（修正済み）
 
