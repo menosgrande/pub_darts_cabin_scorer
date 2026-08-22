@@ -390,6 +390,24 @@ const [stats, setStats] = useState(...); // ✕ 二重管理の元
 - **PREV**: 統計をstateにしていれば「巻き戻し後も古い統計が残る」事故が起きるが、`calculateStats(players)` 方式なら自動的に解決する
 - **CPU**: CPUの統計を人間と同じ計算ロジックで出すか、別枠にするか。CPUの投擲データは `cpuPlayTurn` の戻り値にバースト時の投擲も含まれるため、集計時にダブルカウントしないよう注意
 
+#### 4-1. ゲームをまたいだ通算成績（Phase 1・実装済み）
+
+上記は「1ゲーム内でのライブ統計表示」の話。それとは別に、**ゲームをまたいだ通算成績（成長記録）**を`STATS_STORAGE_KEY`(`pub_darts_cabin_stats_v1`)に実装した。`LOCAL_STORAGE_KEY`(進行中の1ゲームを24時間だけ復元するためのキー)とは完全に独立している。
+
+**設計方針:**
+- 生の`history`(投擲ログ)は保存しない。ゲーム終了時に**集計済みの1レコード**だけを配列に追記する
+- レコードには`darts`(投擲本数)を含めておく。PPD自体は保存時点で計算済みだが、後から「勝利時平均ダーツ数」「301/501/701別分析」等をやりたくなった時に、生ログなしでも最低限の再集計ができるようにするため
+- プレイヤー識別は`playerKey`と`playerName`を最初から分離。Phase 1では`playerKey = normalizePlayerName(playerName)`（NFKC正規化＋trim＋空白圧縮のみ。ローマ字/かな/カナ間の同一人物推定はしない＝誤名寄せの方が分離漏れより厄介なため）。Phase 2でプロフィールUIを追加する際は`playerKey`を固定ID(`"player_001"`等)に差し替えるだけで済み、レコードのフィールド構成自体は変えなくてよい設計にしてある
+
+**実装箇所:**
+- `js/scoring.js`: `normalizePlayerName(name)` / `buildGameStatsRecords(players, playerCount, winner, gameMode, outMode)`（共に純粋関数。`tests/gameStats.test.js`でカバー済み）
+- `js/app-main.js`: `winner`確定を検知するuseEffectで`buildGameStatsRecords`を呼び、`STATS_STORAGE_KEY`に追記。**二重記録防止のため`winner._statsRecorded`フラグを立てる**（このフラグはRESUME時のセーブデータにも含まれるため、ゲーム終了直後にブラウザを閉じてRESUMEしても再記録されない）
+
+**未着手（Phase 2以降）:**
+- 統計を実際に画面表示するUI（現時点ではlocalStorageに溜まるだけで、閲覧手段がない）
+- プロフィールUIによる`playerKey`の固定ID化・既存の名前ベースレコードとの統合
+- Bustをどう扱うか（現状`darts`には含まれるが、バースト有無を区別するフィールドはまだない）
+
 ---
 
 ### 6. CPUを1投ずつ投げるように変更する（未着手・次にやる候補）
