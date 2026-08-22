@@ -404,9 +404,11 @@ const [stats, setStats] = useState(...); // ✕ 二重管理の元
 - `js/app-main.js`: `winner`確定を検知するuseEffectで`buildGameStatsRecords`を呼び、`STATS_STORAGE_KEY`に追記。**二重記録防止のため`winner._statsRecorded`フラグを立てる**（このフラグはRESUME時のセーブデータにも含まれるため、ゲーム終了直後にブラウザを閉じてRESUMEしても再記録されない）
 
 **未着手（Phase 2以降）:**
-- 統計を実際に画面表示するUI（現時点ではlocalStorageに溜まるだけで、閲覧手段がない）
 - プロフィールUIによる`playerKey`の固定ID化・既存の名前ベースレコードとの統合
 - Bustをどう扱うか（現状`darts`には含まれるが、バースト有無を区別するフィールドはまだない）
+
+**閲覧UI（実装済み）:**
+GAME SETUPモーダル上部の「📊 通算成績を見る」ボタンから開く専用モーダル。`summarizePlayerStats(records)`（`js/scoring.js`、純粋関数）で`playerKey`ごとに勝敗数・01の平均PPD/ベストPPD/上がり率・クリケットの平均MPR/ベストMPRを集計して表示。直近15試合のリストと、`STATS_STORAGE_KEY`を丸ごと削除する「統計をリセット」（確認付き）も含む。表示専用の派生値なので、統計結果自体はstateに持たず開くたびに再計算している（原則4-1と同じ理由）。
 
 ---
 
