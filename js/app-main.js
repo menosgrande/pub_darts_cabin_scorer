@@ -108,6 +108,7 @@ const { useState, useEffect, useRef, useMemo } = React;
     const touchStartPosRef = useRef(null); // {x,y}。スワイプ/ドラッグをタップと誤認しないための判定用
     const currentThrowsRef = useRef([]);
     const winnerRef = useRef(null);
+    const showSettingsSetupRef = useRef(true); // beforeunload判定用(セットアップ画面中は警告不要)
     // 最新stateをrefで追跡 → useEffect内のクロージャが古い値を掴む問題を防ぐ
     const playersRef = useRef(players);
     const activePlayerIndexRef = useRef(0);
@@ -132,6 +133,7 @@ const { useState, useEffect, useRef, useMemo } = React;
     playerCountRef.current = playerCount;
     maxRoundsRef.current = maxRounds;
     winnerRef.current = winner; // winner の最新値をrefに同期
+    showSettingsSetupRef.current = showSettingsSetup;
 
     const setCurrentThrowsImmediate = (nextThrows) => {
       currentThrowsRef.current = nextThrows;
@@ -527,6 +529,38 @@ const { useState, useEffect, useRef, useMemo } = React;
       refreshRestorableSave();
     }, []);
 
+    // ── 通算成績(ゲームをまたいだ成長記録)の保存 ──
+    // winner確定(ゲーム終了)を検知して、gameStats専用キー(STATS_STORAGE_KEY)に
+    // 集計済みレコードを追記する。LOCAL_STORAGE_KEY(進行中の1ゲーム復元用)とは無関係。
+    //
+    // 二重記録防止: winnerオブジェクトに_statsRecordedフラグを立てて記録済みを示す。
+    // これによって(a)このeffect自体が同じwinnerに対して2回走らない(フラグ付きに更新後は
+    // 早期returnする)のと、(b)ゲーム終了直後にブラウザを閉じてRESUMEした場合でも、
+    // 保存されたwinnerオブジェクトにフラグが残っているため再記録されない。
+    useEffect(() => {
+      if (!winner || winner._statsRecorded) return;
+      try {
+        const records = buildGameStatsRecords(
+          players,
+          playerCount,
+          winner,
+          gameMode,
+          outMode,
+        );
+        if (records.length > 0) {
+          const raw = localStorage.getItem(STATS_STORAGE_KEY);
+          const existing = raw ? JSON.parse(raw) : [];
+          const updated = Array.isArray(existing)
+            ? existing.concat(records)
+            : records;
+          localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(updated));
+        }
+      } catch (e) {
+        // 統計保存の失敗はゲーム進行そのものに影響させない
+      }
+      setWinner((w) => (w ? { ...w, _statsRecorded: true } : w));
+    }, [winner, players, playerCount, gameMode, outMode]);
+
     useEffect(() => {
       const h = (e) => {
         if (e.key === "Escape" && editingThrowIndex !== null)
@@ -535,6 +569,34 @@ const { useState, useEffect, useRef, useMemo } = React;
       window.addEventListener("keydown", h);
       return () => window.removeEventListener("keydown", h);
     }, [editingThrowIndex]);
+
+    // ── ブラウザを閉じる/リロードする際の離脱確認 ──
+    // window.addEventListenerのハンドラはReactのレンダリングサイクル外から呼ばれるため、
+    // stateを直接参照すると古いクロージャを掴む(STATE_MANAGEMENT.md「Ref同期ルール」参照)。
+    // 進行中のゲームがある場合(セットアップ画面ではない・勝敗未確定・スコアやスローが1つでもある)
+    // のみ、ブラウザ標準の確認ダイアログを出す。ローカル保存(24時間)はあるが、
+    // 誤ってタブを閉じてしまう事故そのものを防ぐための一段目のガード。
+    useEffect(() => {
+      const handleBeforeUnload = (e) => {
+        const p = playersRef.current;
+        const pc = playerCountRef.current;
+        const hasInProgressGame =
+          !showSettingsSetupRef.current &&
+          !winnerRef.current &&
+          (p[0].history.length > 0 ||
+            (pc >= 2 && p[1].history.length > 0) ||
+            currentThrowsRef.current.length > 0);
+        if (hasInProgressGame) {
+          // 確認メッセージの文言はブラウザ側が独自のもの(日本語含む)を表示するため
+          // e.returnValueに渡す文字列自体は現代のブラウザではほぼ無視される。
+          // 空文字ではなくpreventDefault()すること自体がトリガーとして必要。
+          e.preventDefault();
+          e.returnValue = "";
+        }
+      };
+      window.addEventListener("beforeunload", handleBeforeUnload);
+      return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    }, []);
 
     useEffect(() => {
       currentThrowsRef.current = currentThrows;
@@ -2857,7 +2919,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                         className:
                           "text-center text-[11px] font-bold text-rose-400 bg-rose-950/30 border border-rose-900/40 rounded-xl py-3 px-3",
                       },
-                      "End the current game and start a new one?",
+                      "現在のゲームを終了して新しいゲームを始めますか？",
                     ),
                     React.createElement(
                       "div",
@@ -2872,7 +2934,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                           className:
                             "py-3 rounded-xl bg-zinc-900 border border-zinc-700/60 text-zinc-400 font-black text-xs cursor-pointer",
                         },
-                        "CANCEL",
+                        "キャンセル",
                       ),
                       React.createElement(
                         "button",
@@ -2884,7 +2946,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                           className:
                             "py-3 rounded-xl bg-rose-600 border border-rose-500 text-white font-black text-xs cursor-pointer",
                         },
-                        "NEW GAME",
+                        "新しいゲーム",
                       ),
                     ),
                   )
@@ -2946,17 +3008,17 @@ const { useState, useEffect, useRef, useMemo } = React;
                   className:
                     "text-xs font-black tracking-widest text-rose-500 uppercase",
                 },
-                "END GAME",
+                "ゲームを終了",
               ),
               React.createElement(
                 "p",
                 { className: "text-[11px] text-zinc-400 leading-relaxed" },
-                "End the current game and return to the menu?",
+                "現在のゲームを終了してメニューに戻りますか？",
                 React.createElement("br", null),
                 React.createElement(
                   "span",
                   { className: "text-rose-500/80 font-bold" },
-                  "Turn history will be cleared.",
+                  "ターン履歴は消去されます。",
                 ),
               ),
             ),
@@ -2973,7 +3035,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                   className:
                     "py-3 bg-zinc-900 border border-zinc-700/60 text-zinc-400 text-xs font-bold rounded-xl cursor-pointer",
                 },
-                "CANCEL",
+                "キャンセル",
               ),
               React.createElement(
                 "button",
@@ -2982,7 +3044,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                   className:
                     "py-3 bg-rose-600 border border-rose-500 text-white text-xs font-black rounded-xl cursor-pointer",
                 },
-                "LEAVE",
+                "終了する",
               ),
             ),
           ),

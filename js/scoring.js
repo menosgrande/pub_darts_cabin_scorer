@@ -74,6 +74,41 @@
   // findHighScorePlan(301+の高得点セットアップ探索) / buildAssistLine(画面上部アシスト文言生成) /
   // buildCountUpAssist(Count-Up用のペース表示)。CPU Strategyの前段(scoreLeaveQuality)と同一責務区分。
   // ═══════════════════════════════════════════════════════════════════════
+  // ─────────────────────────────────────────────────────────────────────────
+  // findHighScorePlan の候補ショット定義
+  //   HIGH_VALUE_SHOTS: dartsLeft>=2(まだ後続の投擲がある)ケース用。組み合わせ探索の
+  //     分岐数がdepth乗で効いてくる(buildAssistLineはuseMemo無しで毎レンダー再計算されるため
+  //     重い候補セットは体感パフォーマンスに直結する)ので、実戦で高得点セットアップとして
+  //     現実的に選ばれる範囲(T15-T20 / S19-S20 / Bull)に絞る。
+  //   ALL_SHOTS: dartsLeft===1(そのターン最後の1投)専用。この場合は分岐が1段しかないため
+  //     全ナンバー×S/D/T + Bullを試しても計算コストは無視できる。以前はここもHIGH_VALUE_SHOTS
+  //     を流用していたため「最後の1投で本来はD/Bullや他ナンバーを狙うべきリーブ」が
+  //     候補から漏れていた。
+  // ─────────────────────────────────────────────────────────────────────────
+  const HIGH_VALUE_SHOTS = [
+    { label: "T20", pts: 60 },
+    { label: "T19", pts: 57 },
+    { label: "T18", pts: 54 },
+    { label: "T17", pts: 51 },
+    { label: "T16", pts: 48 },
+    { label: "T15", pts: 45 },
+    { label: "D-Bull", pts: 50 },
+    { label: "S-Bull", pts: 25 },
+    { label: "S20", pts: 20 },
+    { label: "S19", pts: 19 },
+  ];
+  const ALL_SHOTS = (() => {
+    const arr = [];
+    for (let n = 1; n <= 20; n++) {
+      arr.push({ label: `S${n}`, pts: n });
+      arr.push({ label: `D${n}`, pts: n * 2 });
+      arr.push({ label: `T${n}`, pts: n * 3 });
+    }
+    arr.push({ label: "D-Bull", pts: 50 });
+    arr.push({ label: "S-Bull", pts: 25 });
+    return arr;
+  })();
+
   const findHighScorePlan = (
     score,
     dartsLeft,
@@ -86,16 +121,7 @@
     // このsearch関数を再利用したいため撤廃。呼び出し側は「直接チェックアウトできない場合」
     // にのみこれを使うので、スコア帯による足切りは不要。
     if (dartsLeft <= 0) return null;
-    const shots = [
-      { label: "T20", pts: 60 },
-      { label: "T19", pts: 57 },
-      { label: "T18", pts: 54 },
-      { label: "T17", pts: 51 },
-      { label: "T16", pts: 48 },
-      { label: "T15", pts: 45 },
-      { label: "S20", pts: 20 },
-      { label: "S19", pts: 19 },
-    ];
+    const shots = dartsLeft === 1 ? ALL_SHOTS : HIGH_VALUE_SHOTS;
     let best = null;
     const search = (remaining, depth, route, scored) => {
       if (depth === 0) {
@@ -272,6 +298,88 @@
       color: "text-zinc-500",
       pulse: false,
     };
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 通算成績(ゲームをまたいだ成長記録)
+  //
+  // 設計方針(Phase 1 / Phase 2への移行を見据えた設計):
+  //   ・プレイヤー識別は最初から playerKey / playerName を分けて持つ。
+  //     Phase 1(今回): playerKey = normalizePlayerName(playerName) による名前ベースの簡易名寄せ。
+  //     Phase 2(将来): プロフィールUIを追加したら playerKey を "player_001" のような固定IDに
+  //       差し替えられる。レコードのフィールド構成自体は変えずに済む設計にしてある。
+  //   ・normalizePlayerNameは「表記ゆれの吸収」だけに留め、別名の同一人物推定(ローマ字⇄
+  //     かな⇄カナ等)はしない。誤った名寄せは統計システムでは分離より厄介なため。
+  // ─────────────────────────────────────────────────────────────────────────
+  const normalizePlayerName = (name) => {
+    if (typeof name !== "string") return "";
+    return name
+      .normalize("NFKC") // 全角/半角スペース・英数字の表記ゆれを吸収
+      .trim()
+      .replace(/\s+/g, " "); // 連続空白を1つに圧縮
+  };
+
+  // 1ゲーム終了時点で、参加プレイヤーごとの統計レコードを生成する。
+  // 生のhistory(投擲ログ)は保存せず、後から再集計したくなった時のために
+  // 「集計値＋ゲーム条件」だけを残す設計(ダーツ本数を含めるのはPPD等の再計算余地を残すため)。
+  const buildGameStatsRecords = (players, playerCount, winner, gameMode, outMode) => {
+    if (!winner) return [];
+    const relevant = playerCount === 1 ? [players[0]] : players.slice(0, 2);
+
+    return relevant.map((p) => {
+      const dartsThrown = p.history.reduce(
+        (sum, node) => sum + (Array.isArray(node.throws) ? node.throws.length : 0),
+        0,
+      );
+      const rounds = p.history.length;
+
+      let win = null; // solo(playerCount===1)は勝敗の概念がないのでnull
+      let isDraw = false;
+      if (playerCount >= 2) {
+        isDraw = Boolean(winner.isDraw);
+        win = !isDraw && p.name === winner.name;
+      }
+
+      let finalScore = null;
+      let ppd = null;
+      let mpr = null;
+      let checkoutSuccess = null;
+
+      if (gameMode === "01") {
+        finalScore = p.remainingScore;
+        const scored = p.initialScore - p.remainingScore;
+        ppd = dartsThrown > 0 ? scored / dartsThrown : null;
+        checkoutSuccess = p.remainingScore === 0;
+      } else if (gameMode === "cricket") {
+        finalScore = p.cricketScore;
+        const totalMarks = Object.values(p.cricketMarks || {}).reduce(
+          (a, b) => a + b,
+          0,
+        );
+        mpr = rounds > 0 ? totalMarks / rounds : null;
+      } else if (gameMode === "countup") {
+        finalScore = p.accumulatedScore;
+        ppd = dartsThrown > 0 ? p.accumulatedScore / dartsThrown : null;
+      }
+
+      return {
+        ts: Date.now(),
+        gameMode,
+        startingScore: gameMode === "01" ? p.initialScore : null,
+        outMode: gameMode === "01" ? normalizeOutMode(outMode) : null,
+        playerCount,
+        playerKey: normalizePlayerName(p.name),
+        playerName: p.name,
+        win,
+        isDraw,
+        rounds,
+        darts: dartsThrown,
+        finalScore,
+        ppd,
+        mpr,
+        checkoutSuccess,
+      };
+    });
   };
 
   // ─────────────────────────────────────────────────────────────────────────
