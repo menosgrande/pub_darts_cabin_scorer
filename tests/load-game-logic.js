@@ -56,6 +56,8 @@ function loadGameLogic() {
     "scoreLeaveQuality",
     "getSteelDartsArrangement",
     "CRICKET_TARGETS",
+    "normalizePlayerName",
+    "buildGameStatsRecords",
   ];
   const grabber = exportNames
     .map((n) => `__exports__.${n} = typeof ${n} !== "undefined" ? ${n} : undefined;`)
