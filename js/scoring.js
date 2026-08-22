@@ -382,6 +382,100 @@
     });
   };
 
+  // 通算成績の集計(playerKeyごとにグルーピング)。
+  // 表示専用の派生値なので、STATE_MANAGEMENT.md原則の通り「stateにせず都度計算する」方針を踏襲。
+  const summarizePlayerStats = (records) => {
+    if (!Array.isArray(records)) return [];
+    const byKey = new Map();
+    records.forEach((r) => {
+      if (!byKey.has(r.playerKey)) {
+        byKey.set(r.playerKey, {
+          playerKey: r.playerKey,
+          playerName: r.playerName,
+          gamesPlayed: 0,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+          o1: {
+            games: 0,
+            ppdSum: 0,
+            ppdCount: 0,
+            bestPpd: null,
+            checkoutSuccesses: 0,
+            checkoutAttempts: 0,
+          },
+          cricket: { games: 0, mprSum: 0, mprCount: 0, bestMpr: null },
+          countup: { games: 0, ppdSum: 0, ppdCount: 0, bestPpd: null },
+        });
+      }
+      const s = byKey.get(r.playerKey);
+      s.playerName = r.playerName; // 最新の表示名(表記ゆれがあっても最後に使われた表記で表示)
+      s.gamesPlayed += 1;
+      if (r.win === true) s.wins += 1;
+      else if (r.isDraw) s.draws += 1;
+      else if (r.win === false) s.losses += 1;
+
+      if (r.gameMode === "01") {
+        s.o1.games += 1;
+        if (typeof r.ppd === "number" && Number.isFinite(r.ppd)) {
+          s.o1.ppdSum += r.ppd;
+          s.o1.ppdCount += 1;
+          if (s.o1.bestPpd === null || r.ppd > s.o1.bestPpd) s.o1.bestPpd = r.ppd;
+        }
+        if (r.checkoutSuccess !== null) {
+          s.o1.checkoutAttempts += 1;
+          if (r.checkoutSuccess) s.o1.checkoutSuccesses += 1;
+        }
+      } else if (r.gameMode === "cricket") {
+        s.cricket.games += 1;
+        if (typeof r.mpr === "number" && Number.isFinite(r.mpr)) {
+          s.cricket.mprSum += r.mpr;
+          s.cricket.mprCount += 1;
+          if (s.cricket.bestMpr === null || r.mpr > s.cricket.bestMpr)
+            s.cricket.bestMpr = r.mpr;
+        }
+      } else if (r.gameMode === "countup") {
+        s.countup.games += 1;
+        if (typeof r.ppd === "number" && Number.isFinite(r.ppd)) {
+          s.countup.ppdSum += r.ppd;
+          s.countup.ppdCount += 1;
+          if (s.countup.bestPpd === null || r.ppd > s.countup.bestPpd)
+            s.countup.bestPpd = r.ppd;
+        }
+      }
+    });
+
+    return Array.from(byKey.values())
+      .map((s) => {
+        const decided = s.wins + s.losses + s.draws;
+        return {
+          playerKey: s.playerKey,
+          playerName: s.playerName,
+          gamesPlayed: s.gamesPlayed,
+          wins: s.wins,
+          losses: s.losses,
+          draws: s.draws,
+          winRate: decided > 0 ? s.wins / decided : null,
+          o1Games: s.o1.games,
+          o1AvgPpd: s.o1.ppdCount > 0 ? s.o1.ppdSum / s.o1.ppdCount : null,
+          o1BestPpd: s.o1.bestPpd,
+          o1CheckoutRate:
+            s.o1.checkoutAttempts > 0
+              ? s.o1.checkoutSuccesses / s.o1.checkoutAttempts
+              : null,
+          cricketGames: s.cricket.games,
+          cricketAvgMpr:
+            s.cricket.mprCount > 0 ? s.cricket.mprSum / s.cricket.mprCount : null,
+          cricketBestMpr: s.cricket.bestMpr,
+          countupGames: s.countup.games,
+          countupAvgPpd:
+            s.countup.ppdCount > 0 ? s.countup.ppdSum / s.countup.ppdCount : null,
+          countupBestPpd: s.countup.bestPpd,
+        };
+      })
+      .sort((a, b) => b.gamesPlayed - a.gamesPlayed);
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // Icons
   // ─────────────────────────────────────────────────────────────────────────
