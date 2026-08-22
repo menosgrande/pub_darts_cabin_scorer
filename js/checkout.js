@@ -415,12 +415,16 @@
 
   const getThrowFromCoords = (x, y, bullType) => {
     const r = Math.sqrt(x * x + y * y);
+    // ── 判定半径は盤面SVG描画側(app-main.jsのbp()呼び出し)の値と必ず一致させること ──
+    // 描画: bp(22,90)=Single内側 / bp(90,112)=Triple / bp(112,154)=Single外側 / bp(154,176)=Double
+    // 以前はここだけ1〜6ズレた独自の値になっており、特にDouble外側は170までしかなく
+    // 見た目はDoubleの帯(154〜176)なのに170〜176がMiss判定になるバグがあった。
     const rBullseye = 8.5,
       rOuterBull = 22,
-      rTripleInner = 91,
-      rTripleOuter = 111,
-      rDoubleInner = 153,
-      rDoubleOuter = 170;
+      rTripleInner = 90,
+      rTripleOuter = 112,
+      rDoubleInner = 154,
+      rDoubleOuter = 176;
     // D-Bull = 50点固定。multiplier:1 にしないと getSubtotal で 100点になる
     if (r <= rBullseye)
       return { score: 50, multiplier: 1, x, y, label: "D-Bull", isBull: true };
@@ -553,7 +557,20 @@
   // ─────────────────────────────────────────────────────────────────────────
   // findCheckoutRoute: 動的チェックアウト探索
   //   checkoutPref: "double"|"triple"|"single"
+  //
+  //   メモ化について: score/dartsLeft/bullType/outMode/checkoutPrefの組だけで
+  //   結果が一意に決まる純粋関数で、score(0〜502程度)・dartsLeft(1〜3)・
+  //   bullType/outMode/checkoutPref(各数種類)という有限で小さい入力域しか
+  //   取らない。一方で自分自身を再帰呼び出しする上、scoreLeaveQuality/
+  //   findHighScorePlanから同じ(score, dartsLeft, ...)の組み合わせが
+  //   大量に重複して呼ばれる（特にfindHighScorePlanの全探索は、投げる順序が
+  //   違うだけで同じremainingに何度も到達する）。メモ化しないと
+  //   buildAssistLineが毎レンダー呼ばれる(useMemo無し)構造と合わさって
+  //   体感できるレベルの遅延（数百ms/回）を引き起こす。
+  //   キャッシュは無制限に増え続けるが、キー空間が小さい(高々数万通り)ため
+  //   実用上問題にならない。
   // ─────────────────────────────────────────────────────────────────────────
+  const __checkoutRouteCache = new Map();
   const findCheckoutRoute = (
     score,
     dartsLeft,
@@ -564,6 +581,30 @@
     outMode = normalizeOutMode(outMode);
     if (score <= 0 || dartsLeft <= 0) return null;
 
+    const cacheKey = `${score}|${dartsLeft}|${bullType}|${outMode}|${checkoutPref}`;
+    if (__checkoutRouteCache.has(cacheKey))
+      return __checkoutRouteCache.get(cacheKey);
+
+    const result = computeCheckoutRoute(
+      score,
+      dartsLeft,
+      bullType,
+      outMode,
+      checkoutPref,
+    );
+    __checkoutRouteCache.set(cacheKey, result);
+    return result;
+  };
+
+  // 実際の探索本体。findCheckoutRoute自身を再帰的に呼ぶため、キャッシュ判定は
+  // 呼び出し口(findCheckoutRoute)側だけで行い、この関数は素通しの計算のみを担う。
+  const computeCheckoutRoute = (
+    score,
+    dartsLeft,
+    bullType,
+    outMode,
+    checkoutPref,
+  ) => {
     const isValidOut = (mult, isBull) => {
       if (outMode === "single") return true;
       if (outMode === "double") return mult === 2;
