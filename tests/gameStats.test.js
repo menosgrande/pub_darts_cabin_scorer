@@ -158,3 +158,78 @@ test("buildGameStatsRecords: 生のthrows配列自体はレコードに含まれ
   assert.equal("throws" in records[0], false);
   assert.equal("history" in records[0], false);
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// summarizePlayerStats
+// ─────────────────────────────────────────────────────────────────────────
+const { summarizePlayerStats } = loadGameLogic();
+
+test("summarizePlayerStats: 空配列を渡すと空配列を返す", () => {
+  const r = summarizePlayerStats([]);
+  assert.equal(r.length, 0);
+});
+
+test("summarizePlayerStats: 同じplayerKeyの複数試合が正しく集計される", () => {
+  const records = [
+    {
+      playerKey: "めの",
+      playerName: "めの",
+      gameMode: "01",
+      win: true,
+      isDraw: false,
+      ppd: 30,
+      checkoutSuccess: true,
+      mpr: null,
+    },
+    {
+      playerKey: "めの",
+      playerName: "めの",
+      gameMode: "01",
+      win: false,
+      isDraw: false,
+      ppd: 20,
+      checkoutSuccess: false,
+      mpr: null,
+    },
+  ];
+  const [s] = summarizePlayerStats(records);
+  assert.equal(s.gamesPlayed, 2);
+  assert.equal(s.wins, 1);
+  assert.equal(s.losses, 1);
+  assert.equal(s.winRate, 0.5);
+  assert.equal(s.o1AvgPpd, 25);
+  assert.equal(s.o1BestPpd, 30);
+  assert.equal(s.o1CheckoutRate, 0.5);
+});
+
+test("summarizePlayerStats: playerKeyが異なれば別集計になる(表記ゆれの取り違えを防ぐ)", () => {
+  const records = [
+    { playerKey: "a", playerName: "A", gameMode: "01", win: true, isDraw: false, ppd: 30, checkoutSuccess: true },
+    { playerKey: "b", playerName: "B", gameMode: "01", win: false, isDraw: false, ppd: 10, checkoutSuccess: false },
+  ];
+  const s = summarizePlayerStats(records);
+  assert.equal(s.length, 2);
+});
+
+test("summarizePlayerStats: playerCount=1(solo, win=null)の試合はwins/losses/drawsに数えない", () => {
+  const records = [
+    { playerKey: "めの", playerName: "めの", gameMode: "countup", win: null, isDraw: false, ppd: 15 },
+  ];
+  const [s] = summarizePlayerStats(records);
+  assert.equal(s.gamesPlayed, 1);
+  assert.equal(s.wins, 0);
+  assert.equal(s.losses, 0);
+  assert.equal(s.winRate, null, "勝敗が一度も確定していない(soloのみ)場合はnull");
+  assert.equal(s.countupAvgPpd, 15);
+});
+
+test("summarizePlayerStats: クリケットのMPRはppdと独立して集計される", () => {
+  const records = [
+    { playerKey: "めの", playerName: "めの", gameMode: "cricket", win: true, isDraw: false, mpr: 1.5 },
+    { playerKey: "めの", playerName: "めの", gameMode: "cricket", win: false, isDraw: false, mpr: 2.5 },
+  ];
+  const [s] = summarizePlayerStats(records);
+  assert.equal(s.cricketAvgMpr, 2);
+  assert.equal(s.cricketBestMpr, 2.5);
+  assert.equal(s.o1AvgPpd, null, "クリケットのみのプレイヤーはo1AvgPpdがnull");
+});

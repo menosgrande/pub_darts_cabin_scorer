@@ -58,6 +58,7 @@ function loadGameLogic() {
     "CRICKET_TARGETS",
     "normalizePlayerName",
     "buildGameStatsRecords",
+    "summarizePlayerStats",
   ];
   const grabber = exportNames
     .map((n) => `__exports__.${n} = typeof ${n} !== "undefined" ? ${n} : undefined;`)
