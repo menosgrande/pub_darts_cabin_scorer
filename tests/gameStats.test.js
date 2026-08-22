@@ -233,3 +233,18 @@ test("summarizePlayerStats: クリケットのMPRはppdと独立して集計さ�
   assert.equal(s.cricketBestMpr, 2.5);
   assert.equal(s.o1AvgPpd, null, "クリケットのみのプレイヤーはo1AvgPpdがnull");
 });
+
+test("buildGameStatsRecords: checkoutSuccessはラウンド上限勝ちでは true にならない(0に到達していないため)", () => {
+  // README記載の「上がり率」定義: 0まで到達して終えたゲームだけがcheckoutSuccess=true。
+  // ラウンド上限による残り点数比較の勝利は、0に到達していない限りfalseのまま。
+  const roundLimitWinner = makePlayer({
+    name: "A",
+    initialScore: 501,
+    remainingScore: 40, // 0には到達していないが、相手より少ないので勝者
+    history: [{ throws: [{}, {}, {}] }],
+  });
+  const winner = { name: "A", isDraw: false, o1RoundResult: true };
+  const [rec] = buildGameStatsRecords([roundLimitWinner], 1, winner, "01", "double");
+  assert.equal(rec.checkoutSuccess, false, "0に到達していないのでcheckoutSuccessはfalse");
+});
+
