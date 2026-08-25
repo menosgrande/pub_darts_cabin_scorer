@@ -247,11 +247,18 @@
         };
       // ③ チェックアウト判定
       if (cur === 0) {
-        const isBullHit = Boolean(t.isBull || t.label.includes("Bull"));
-        const isDBull = t.label === "D-Bull";
+        // ── ここは表示用ラベル文字列(t.label)ではなく、構造化フィールド(t.isBull/t.score/
+        // t.bullRing)だけでルール判定する。以前はt.label==="D-Bull"のような文字列比較で
+        // 判定しており、将来UI表示文言を変えただけで採点ロジックが壊れるリスクがあった。
+        const isBullHit = Boolean(t.isBull);
+        // 50点のブルヒットはDouble Out相当として扱う。中心(D-Bull、bullRing:"inner")は
+        // bullTypeを問わず常に50点。fat(50/50)設定の外側ブル(bullRing:"outer")も50点になる。
+        // separate設定の外側ブルは25点なのでここには該当しない(=Double Outでは無効のまま)。
+        const isDoubleEligibleBull = isBullHit && t.score === 50;
         const valid =
           currentOutMode === "single" ||
-          (currentOutMode === "double" && (t.multiplier === 2 || isDBull)) ||
+          (currentOutMode === "double" &&
+            (t.multiplier === 2 || isDoubleEligibleBull)) ||
           (currentOutMode === "master" &&
             (t.multiplier === 2 || t.multiplier === 3 || isBullHit));
         if (!valid)
@@ -279,7 +286,7 @@
 
   const getHitSoundType = (t) => {
     if (!t || t.multiplier === 0) return "click";
-    if (t.isBull || t.label.includes("Bull")) return "hit-bull";
+    if (t.isBull) return "hit-bull";
     if (t.multiplier === 3) return "hit-triple";
     if (t.multiplier === 2) return "hit-double";
     return "hit-single";
@@ -424,14 +431,42 @@
       rTripleInner = 90,
       rTripleOuter = 112,
       rDoubleInner = 154,
-      rDoubleOuter = 176;
+      rDoubleOuter = BOARD_OUTER_RADIUS; // = 176。constants.jsの共有定数（カメラキャリブレーションと共有）
     // D-Bull = 50点固定。multiplier:1 にしないと getSubtotal で 100点になる
+    // bullRing("inner"|"outer") は、labelなどの表示用文字列に頼らずゲームルールを
+    // 判定できるようにするための構造化フィールド。以前は getRoundState が
+    // t.label === "D-Bull" のようにラベル文字列でルール判定していたため、表示文言を
+    // 変えただけで採点ロジックが壊れるリスクがあった(実際に外部レビューで指摘された)。
     if (r <= rBullseye)
-      return { score: 50, multiplier: 1, x, y, label: "D-Bull", isBull: true };
+      return {
+        score: 50,
+        multiplier: 1,
+        x,
+        y,
+        label: "D-Bull",
+        isBull: true,
+        bullRing: "inner",
+      };
     if (r <= rOuterBull)
       return bullType === "fat"
-        ? { score: 50, multiplier: 1, x, y, label: "Bull(50)", isBull: true }
-        : { score: 25, multiplier: 1, x, y, label: "S-Bull(25)", isBull: true };
+        ? {
+            score: 50,
+            multiplier: 1,
+            x,
+            y,
+            label: "Bull(50)",
+            isBull: true,
+            bullRing: "outer",
+          }
+        : {
+            score: 25,
+            multiplier: 1,
+            x,
+            y,
+            label: "S-Bull(25)",
+            isBull: true,
+            bullRing: "outer",
+          };
     const deg = (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
     const idx = Math.floor(((deg + 90 + 9) % 360) / 18);
     const scoreNum = WEDGES[idx];
@@ -541,9 +576,17 @@
     const allowTriple = om === "single" || om === "master";
     if (remaining === 50) {
       targets.push({ num: 25, ring: "bullInner" }); // ブルズアイはどのアウト設定でも有効
-      if (bullType === "fat") targets.push({ num: 25, ring: "bullOuter" }); // 50/50設定はouterも50点
+      if (bullType === "fat") targets.push({ num: 25, ring: "bullOuter" }); // 50/50設定はouterも50点。Double Outでも有効(getRoundStateのisFatOuterBullと対応)
     }
-    if (allowSingle && bullType !== "fat" && remaining === 25) targets.push({ num: 25, ring: "bullOuter" });
+    // 残り25で上がれるのは、Single Out、またはMaster Out(ブルは種類を問わず有効)。
+    // fat設定はouter/innerとも50点固定なので、そもそも25点という結果にならない
+    // (separate設定のouter bullのみが該当)。
+    if (
+      (om === "single" || om === "master") &&
+      bullType !== "fat" &&
+      remaining === 25
+    )
+      targets.push({ num: 25, ring: "bullOuter" });
     if (allowDouble && remaining % 2 === 0 && remaining / 2 >= 1 && remaining / 2 <= 20) {
       targets.push({ num: remaining / 2, ring: "double" });
     }
@@ -605,9 +648,9 @@
     outMode,
     checkoutPref,
   ) => {
-    const isValidOut = (mult, isBull) => {
+    const isValidOut = (mult, isBull, isFatOuterBull) => {
       if (outMode === "single") return true;
-      if (outMode === "double") return mult === 2;
+      if (outMode === "double") return mult === 2 || Boolean(isFatOuterBull);
       if (outMode === "master") return mult === 2 || mult === 3 || isBull;
       return false;
     };
@@ -617,9 +660,17 @@
       const cs = [];
       if (score === 50) cs.push({ label: "D-Bull", mult: 2, isBull: true });
       if (bullType === "fat" && score === 50)
-        cs.push({ label: "Bull", mult: 1, isBull: true });
+        // ラベルはgetThrowFromCoordsの実際の返り値("Bull(50)")と一致させる
+        // (以前は"Bull"表記で、実際のゲーム内表示とズレていた)。
+        // isFatOuterBull: getRoundStateと同じ理由でDouble Outでも有効候補にする。
+        cs.push({
+          label: "Bull(50)",
+          mult: 1,
+          isBull: true,
+          isFatOuterBull: true,
+        });
       if (bullType === "separate" && score === 25)
-        cs.push({ label: "S-Bull", mult: 1, isBull: true });
+        cs.push({ label: "S-Bull(25)", mult: 1, isBull: true });
       if (score % 2 === 0 && score <= 40) {
         const n = score / 2;
         if (WEDGES.includes(n))
@@ -646,7 +697,8 @@
       return cs;
     };
     for (const c of finish1()) {
-      if (isValidOut(c.mult, c.isBull)) return { route: c.label, inDarts: 1 };
+      if (isValidOut(c.mult, c.isBull, c.isFatOuterBull))
+        return { route: c.label, inDarts: 1 };
     }
 
     if (dartsLeft < 2) return null;
