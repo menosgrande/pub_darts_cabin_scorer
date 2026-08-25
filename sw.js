@@ -3,7 +3,7 @@
 //
 // 更新方針: CACHE_NAME のバージョンを上げると、新しいSWがインストールされ、
 // 古いキャッシュは activate 時に破棄される。ファイルを更新したら CACHE_VERSION を上げること。
-const CACHE_VERSION = "v22"; // v22: app-main.js分割Phase1 - useSound()フックを抽出
+const CACHE_VERSION = "v23"; // v23: app-main.js分割Phase1.5 - HowTo/ExitConfirm/StatsModalをコンポーネント抽出
 const CACHE_NAME = `pdcs-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
@@ -17,6 +17,9 @@ const PRECACHE_URLS = [
   "./js/camera/camera-input.js",
   "./js/camera/calibration.js",
   "./js/hooks/useSound.js",
+  "./js/components/HowToModal.js",
+  "./js/components/ExitConfirmModal.js",
+  "./js/components/StatsModal.js",
   "./js/app-main.js",
   "./style.css",
   "./tailwind.css",
