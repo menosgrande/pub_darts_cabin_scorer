@@ -104,6 +104,7 @@ tests/       Node組み込み(node:test)によるゲームロジックの自動�
   findHighScorePlan.test.js   チェックアウトアシスト探索のテスト
   gameStats.test.js           通算成績の集計ロジックのテスト
   calibration.test.js         カメラキャリブレーション(ホモグラフィ計算)のテスト
+  integration.test.js         関数横断の統合テスト(ハイライト/アシスト提案が実際にfinishするかを全パターン検証)
 package.json テストランナー起動用（`npm test`）。アプリ本体はビルド不要・依存パッケージなしのまま
 ```
 

@@ -453,7 +453,7 @@ GAME SETUPモーダル上部の「📊 通算成績を見る」ボタンから�
 
 ### 7. その他、直す価値がありそうな点（優先度順）
 
-1. ~~**テストが0件**: `getRoundState`/`applyCricketDart`/`findCheckoutRoute`/`computeAuto01Scores`/`getFinishTargets`などは引数を渡せば結果が返る純粋関数に近く、テストを書くコストの割に効果が高い。~~ **対応済み**: `tests/`配下にNode組み込み`node:test`ベースのテストを追加（`getThrowFromCoords`/`getRoundState`/クリケットのmark/overflow判定、計34件）。`vm`モジュールで実ファイル(`constants.js`/`checkout.js`/`scoring.js`)をそのまま読み込む方式にし、ロジックの書き写しはしていない。`npm test`または`node --test tests/*.test.js`で実行。`findCheckoutRoute`/`computeAuto01Scores`/`getFinishTargets`は未カバーのまま残っているので、次に手を入れる際はここから追加するとよい。
+1. ~~**テストが0件**: `getRoundState`/`applyCricketDart`/`findCheckoutRoute`/`computeAuto01Scores`/`getFinishTargets`などは引数を渡せば結果が返る純粋関数に近く、テストを書くコストの割に効果が高い。~~ **対応済み**: `tests/`配下にNode組み込み`node:test`ベースのテストを追加。現在は9ファイル・計108件（盤面判定/BUST-OUT/クリケット/チェックアウトアシスト/通算成績/カメラキャリブレーション/関数横断の統合テストまでカバー）。`vm`モジュールで実ファイル(`constants.js`/`checkout.js`/`scoring.js`/`camera/calibration.js`)をそのまま読み込む方式にし、ロジックの書き写しはしていない。`npm test`または`node --test tests/*.test.js`で実行。
 2. **CPU側のコミット処理が人間側（`commitThrow`）と別実装のまま**: 上記6番の変更と合わせて見直す余地がある。stateの非同期更新の都合上、完全に同一関数にはまとめにくいが、少なくとも「1投分のダーツオブジェクトを作る」部分は共通化できる可能性がある
 3. **app-main.jsが依然3179行**: checkout/scoring/cpu/ui-componentsには分割済みだが、`function App()`本体は1つの巨大なコンポーネントのまま。セットアップ画面・プレイ画面・リザルト画面をサブコンポーネントに分ける余地はあるが、機能追加がまだ続いている間は急がなくてよい
 
@@ -531,6 +531,19 @@ GAME SETUPモーダル上部の「📊 通算成績を見る」ボタンから�
 `tests/fatBullDoubleOut.test.js`に「labelだけを書き換えたThrowオブジェクトでも、`isBull`/`score`が正しければ同じ判定結果になる」ことを確認するテストを追加し、旧実装(label文字列比較)に戻すと実際にこのテストだけが落ちることを確認済み。
 
 **教訓**: 表示用の文字列(ラベル、メッセージ、UIテキスト)とロジック判定用の値は、たとえ現状は1対1に対応していても、別のフィールドとして持たせるべき。「表示を変えただけでロジックが壊れる」という結合は、コードを一見しただけでは気づきにくく、今回のように外部レビューで指摘されて初めて表面化しやすい典型的な設計上の負債。
+
+### 追記2: 関数横断の統合テストを追加（`tests/integration.test.js`）
+
+上記のfat Bullバグは、`getThrowFromCoords`・`getRoundState`・`getFinishTargets`・`findCheckoutRoute`の**個々の関数は単体では正しいのに、関数をまたいだ契約（「ハイライトされた場所は実際にfinishする」「提案されたルートは実際にfinishする」）が破られていた**という構造だった。これは単体テストの積み重ねだけでは原理的に検知できないバグの型なので、専用の統合テストファイルを追加した。
+
+- `getFinishTargets`が返す全ターゲットについて、bullType×outModeの全組み合わせ(2×3=6パターン)×残り点数2〜170の全範囲で、実際にその座標をタップした場合に`getRoundState`で本当にfinishするかを検証（座標変換は`getThrowFromCoords`の実際の座標系を使用し、ハードコードした期待値と比較する形にはしていない）
+- `findCheckoutRoute`が返す1投チェックアウト提案について、bullType×outMode×checkoutPrefの全組み合わせ(2×3×3=18パターン)×score2〜170で、提案されたルートが実際にfinishするかを検証
+- `getThrowFromCoords`の全出力パターン（盤面を粗くサンプリングした座標×bullType）を`getRoundState`に直接通してもクラッシュしないことを確認（形の破壊を検知する回帰網）
+- fat Bull問題そのものの統合シナリオ（remaining=50, fat, double outで内側/外側ブル両方が光り、両方とも実際にfinishする）を直接固定
+
+計26件追加（テスト総数108件）。旧実装(label文字列判定)に戻すと、この統合テストのうち3件が正しく落ちることを確認済み。
+
+**教訓**: 個々の関数のテストが全て緑でも、関数間の「暗黙の契約」（Aが有効と言った場所はBでも有効なはず、Aが提案したものはBで実行できるはず）を検証するテストが無いと、今回のような複合バグを防げない。契約を横断させる統合テストは、個別のユニットテストとは別物として意識的に用意する価値がある。
 
 ### BUSTオーバーレイがプレイヤー名バナーまで覆っていた（修正済み）
 
