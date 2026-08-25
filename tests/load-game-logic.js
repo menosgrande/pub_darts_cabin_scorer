@@ -21,7 +21,7 @@ const JS_DIR = path.join(__dirname, "..", "js");
 // テスト対象は「純粋なゲームロジック」のみ。cpu.js/ui-components.js/app-main.js は
 // React・DOM・requestAnimationFrame等ブラウザ環境に依存するため対象外
 // （UIロジックはこのローダーの対象外。将来DOM依存を切り離せたら追加できる）。
-const LOGIC_FILES = ["constants.js", "checkout.js", "scoring.js"];
+const LOGIC_FILES = ["constants.js", "checkout.js", "scoring.js", "camera/calibration.js"];
 
 function loadGameLogic() {
   const sandbox = {
@@ -54,11 +54,16 @@ function loadGameLogic() {
     "findCheckoutRoute",
     "findHighScorePlan",
     "scoreLeaveQuality",
+    "getFinishTargets",
     "getSteelDartsArrangement",
     "CRICKET_TARGETS",
     "normalizePlayerName",
     "buildGameStatsRecords",
     "summarizePlayerStats",
+    "computeHomography",
+    "applyHomography",
+    "CALIBRATION_BOARD_POINTS",
+    "BOARD_OUTER_RADIUS",
   ];
   const grabber = exportNames
     .map((n) => `__exports__.${n} = typeof ${n} !== "undefined" ? ${n} : undefined;`)

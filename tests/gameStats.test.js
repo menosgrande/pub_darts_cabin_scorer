@@ -68,6 +68,7 @@ test("buildGameStatsRecords: 01ソロプレイ(playerCount=1)はwinがnull(勝�
   assert.equal(records[0].darts, 3);
   assert.equal(records[0].checkoutSuccess, true);
   assert.equal(records[0].ppd, 501 / 3);
+  assert.equal(records[0].scored, 501, "通算PPD計算用に生の得点も保存されている");
 });
 
 test("buildGameStatsRecords: 01の2人対戦で勝者/敗者が正しく判定される", () => {
@@ -130,6 +131,7 @@ test("buildGameStatsRecords: クリケットはMPRを計算し、PPD/checkoutSuc
   assert.equal(records[0].ppd, null);
   assert.equal(records[0].checkoutSuccess, null);
   assert.equal(records[0].finalScore, 15);
+  assert.equal(records[0].marks, 6, "通算MPR計算用に生のマーク数も保存されている");
 });
 
 test("buildGameStatsRecords: Count-UpはaccumulatedScoreベースでPPDを計算", () => {
@@ -169,7 +171,7 @@ test("summarizePlayerStats: 空配列を渡すと空配列を返す", () => {
   assert.equal(r.length, 0);
 });
 
-test("summarizePlayerStats: 同じplayerKeyの複数試合が正しく集計される", () => {
+test("summarizePlayerStats: 同じplayerKeyの複数試合が正しく集計される(通算PPDは総得点÷総ダーツ数)", () => {
   const records = [
     {
       playerKey: "めの",
@@ -178,6 +180,8 @@ test("summarizePlayerStats: 同じplayerKeyの複数試合が正しく集計さ�
       win: true,
       isDraw: false,
       ppd: 30,
+      darts: 10,
+      scored: 300,
       checkoutSuccess: true,
       mpr: null,
     },
@@ -188,6 +192,8 @@ test("summarizePlayerStats: 同じplayerKeyの複数試合が正しく集計さ�
       win: false,
       isDraw: false,
       ppd: 20,
+      darts: 20,
+      scored: 400,
       checkoutSuccess: false,
       mpr: null,
     },
@@ -197,15 +203,35 @@ test("summarizePlayerStats: 同じplayerKeyの複数試合が正しく集計さ�
   assert.equal(s.wins, 1);
   assert.equal(s.losses, 1);
   assert.equal(s.winRate, 0.5);
-  assert.equal(s.o1AvgPpd, 25);
-  assert.equal(s.o1BestPpd, 30);
+  // 単純平均(30+20)/2=25ではなく、総得点700÷総ダーツ数30=23.33...が正しい通算PPD
+  assert.equal(s.o1AvgPpd, 700 / 30);
+  assert.equal(s.o1BestPpd, 30, "ベストPPDはゲーム単位の最大値のまま(重み付けしない)");
   assert.equal(s.o1CheckoutRate, 0.5);
+});
+
+test("summarizePlayerStats: ダーツ数が偏っていても、単純平均ではなく総得点÷総ダーツ数になる(ダーツ数が多いゲームの影響が正しく大きくなる)", () => {
+  const records = [
+    { playerKey: "めの", playerName: "めの", gameMode: "01", win: true, isDraw: false, darts: 3, scored: 180, ppd: 60, checkoutSuccess: true },
+    { playerKey: "めの", playerName: "めの", gameMode: "01", win: false, isDraw: false, darts: 300, scored: 3000, ppd: 10, checkoutSuccess: false },
+  ];
+  const [s] = summarizePlayerStats(records);
+  // 単純平均なら(60+10)/2=35になってしまうところ、正しくは(180+3000)/(3+300)=10.49...
+  assert.equal(s.o1AvgPpd, (180 + 3000) / (3 + 300));
+  assert.notEqual(s.o1AvgPpd, 35, "単純平均になっていないか確認");
+});
+
+test("summarizePlayerStats: scoredフィールドが無い古いレコードでも、ppd*dartsから復元して集計できる(スキーマ移行の後方互換性)", () => {
+  const records = [
+    { playerKey: "めの", playerName: "めの", gameMode: "01", win: true, isDraw: false, darts: 10, ppd: 30, checkoutSuccess: true }, // scoredフィールド無し(移行前の想定)
+  ];
+  const [s] = summarizePlayerStats(records);
+  assert.equal(s.o1AvgPpd, 30, "scoredが無ければppd*darts=300をdarts=10で割って復元される");
 });
 
 test("summarizePlayerStats: playerKeyが異なれば別集計になる(表記ゆれの取り違えを防ぐ)", () => {
   const records = [
-    { playerKey: "a", playerName: "A", gameMode: "01", win: true, isDraw: false, ppd: 30, checkoutSuccess: true },
-    { playerKey: "b", playerName: "B", gameMode: "01", win: false, isDraw: false, ppd: 10, checkoutSuccess: false },
+    { playerKey: "a", playerName: "A", gameMode: "01", win: true, isDraw: false, ppd: 30, darts: 10, scored: 300, checkoutSuccess: true },
+    { playerKey: "b", playerName: "B", gameMode: "01", win: false, isDraw: false, ppd: 10, darts: 10, scored: 100, checkoutSuccess: false },
   ];
   const s = summarizePlayerStats(records);
   assert.equal(s.length, 2);
@@ -213,7 +239,7 @@ test("summarizePlayerStats: playerKeyが異なれば別集計になる(表記ゆ
 
 test("summarizePlayerStats: playerCount=1(solo, win=null)の試合はwins/losses/drawsに数えない", () => {
   const records = [
-    { playerKey: "めの", playerName: "めの", gameMode: "countup", win: null, isDraw: false, ppd: 15 },
+    { playerKey: "めの", playerName: "めの", gameMode: "countup", win: null, isDraw: false, ppd: 15, darts: 24, scored: 360 },
   ];
   const [s] = summarizePlayerStats(records);
   assert.equal(s.gamesPlayed, 1);
@@ -223,13 +249,14 @@ test("summarizePlayerStats: playerCount=1(solo, win=null)の試合はwins/losses
   assert.equal(s.countupAvgPpd, 15);
 });
 
-test("summarizePlayerStats: クリケットのMPRはppdと独立して集計される", () => {
+test("summarizePlayerStats: クリケットのMPRは総マーク数÷総ラウンド数で通算される(単純平均ではない)", () => {
   const records = [
-    { playerKey: "めの", playerName: "めの", gameMode: "cricket", win: true, isDraw: false, mpr: 1.5 },
-    { playerKey: "めの", playerName: "めの", gameMode: "cricket", win: false, isDraw: false, mpr: 2.5 },
+    { playerKey: "めの", playerName: "めの", gameMode: "cricket", win: true, isDraw: false, mpr: 1.5, marks: 3, rounds: 2 },
+    { playerKey: "めの", playerName: "めの", gameMode: "cricket", win: false, isDraw: false, mpr: 2.5, marks: 10, rounds: 4 },
   ];
   const [s] = summarizePlayerStats(records);
-  assert.equal(s.cricketAvgMpr, 2);
+  // 単純平均なら(1.5+2.5)/2=2になるところ、正しくは(3+10)/(2+4)=2.1666...
+  assert.equal(s.cricketAvgMpr, (3 + 10) / (2 + 4));
   assert.equal(s.cricketBestMpr, 2.5);
   assert.equal(s.o1AvgPpd, null, "クリケットのみのプレイヤーはo1AvgPpdがnull");
 });
