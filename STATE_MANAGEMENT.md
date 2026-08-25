@@ -689,9 +689,11 @@ CPU難易度（`CPU_DIFFICULTY`の`numberAccuracy`/`ringWeights`）は感覚だ�
 
 再設計はしない。既存の実装をそのまま該当ファイルへ移し、外部に公開するAPIだけ最小限に絞る（例: `useSound(soundEnabled)` → `{playSound, triggerHaptic, initAudio}`の3つだけ）。Source of Truthへの依存が低い順にボトムアップで進める。各Phase完了後は必ず`npm test`を全件通し、ゲームロジック・State・Ref同期に変更がないことを確認する。
 
-**Phase 1（低依存・実装済み）**: `useSound()`フックを`js/hooks/useSound.js`へ抽出。`audioCtxRef`も含め完全に自己完結。外部APIは`{playSound, triggerHaptic, initAudio}`のみ。app-main.js側は`const {playSound, triggerHaptic, initAudio} = useSound(soundEnabled);`の1行に置き換え。
+**Phase 1（低依存・完了）**: `useSound()`フックを`js/hooks/useSound.js`へ抽出。`audioCtxRef`も含め完全に自己完結。外部APIは`{playSound, triggerHaptic, initAudio}`のみ。app-main.js側は`const {playSound, triggerHaptic, initAudio} = useSound(soundEnabled);`の1行に置き換え。
 
-**Phase 1続き（未着手）**: HowTo/Exit Confirm/STATSモーダルをそれぞれ`js/components/`配下の純粋な表示コンポーネントとして抽出。
+**Phase 1.5（低依存UI・完了）**: `HowToModal`/`ExitConfirmModal`/`StatsModal`を`js/components/`配下へ純粋な表示コンポーネントとして抽出。再設計はせず、元のJSXをそのまま移し、外部propsだけ最小限に絞った（例: `StatsModal`は`{playSound, showStatsResetConfirm, onClose, onRequestReset, onCancelReset, onConfirmReset}`のみ）。`StatsModal`のlocalStorage読み込み・`summarizePlayerStats`呼び出しは、このPhaseでは意図的にコンポーネント内に残したまま（データ取得ロジックの別Hook化は将来の課題として先送り）。`localStorage.removeItem`（実際の削除実行）はapp-main.js側の`onConfirmReset`ハンドラに残し、`StatsModal`自体は表示とコールバック呼び出しに徹する設計にした。
+
+Phase 1全体で`app-main.js`は3586行→3091行（495行減、目的は行数削減自体ではなく責務境界の確立）。各ステップ後に`npm test`（108件）と構文チェックを実施し、ゲームロジック・Source of Truth・Ref同期に変更がないことを確認済み。
 
 **Phase 2（未着手）**: Save/Restore系（自動保存Effect・統計記録Effect・`migrateSaveData`・`handleRestoreSave`）。ゲームState全体を読み書きするため、フック化する場合は引数/戻り値の設計を慎重に決める。
 
