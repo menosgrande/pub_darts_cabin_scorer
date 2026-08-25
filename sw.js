@@ -3,7 +3,7 @@
 //
 // 更新方針: CACHE_NAME のバージョンを上げると、新しいSWがインストールされ、
 // 古いキャッシュは activate 時に破棄される。ファイルを更新したら CACHE_VERSION を上げること。
-const CACHE_VERSION = "v16"; // v16: CPU名前漏れの根本修正、盤外タップ誤爆、BUSTオーバーレイのバナー侵食、クリックXY=0の座標バグ修正
+const CACHE_VERSION = "v21"; // v21: ルール判定をlabel文字列依存からisBull/score/bullRingの構造化データに変更
 const CACHE_NAME = `pdcs-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
@@ -14,6 +14,8 @@ const PRECACHE_URLS = [
   "./js/scoring.js",
   "./js/cpu.js",
   "./js/ui-components.js",
+  "./js/camera/camera-input.js",
+  "./js/camera/calibration.js",
   "./js/app-main.js",
   "./style.css",
   "./tailwind.css",
