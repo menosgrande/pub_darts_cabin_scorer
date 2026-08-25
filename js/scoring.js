@@ -344,21 +344,22 @@
       let ppd = null;
       let mpr = null;
       let checkoutSuccess = null;
+      let scored = null; // 01: 消費した点数 / countup: 累積得点。通算PPDを「総得点÷総ダーツ数」で
+      // 正しく重み付け平均するために、ppd(このゲーム内だけの平均)とは別に生の値も残す。
+      let marks = null; // cricket: 有効化した通算マーク数。同様に通算MPRの重み付けに使う。
 
       if (gameMode === "01") {
         finalScore = p.remainingScore;
-        const scored = p.initialScore - p.remainingScore;
+        scored = p.initialScore - p.remainingScore;
         ppd = dartsThrown > 0 ? scored / dartsThrown : null;
         checkoutSuccess = p.remainingScore === 0;
       } else if (gameMode === "cricket") {
         finalScore = p.cricketScore;
-        const totalMarks = Object.values(p.cricketMarks || {}).reduce(
-          (a, b) => a + b,
-          0,
-        );
-        mpr = rounds > 0 ? totalMarks / rounds : null;
+        marks = Object.values(p.cricketMarks || {}).reduce((a, b) => a + b, 0);
+        mpr = rounds > 0 ? marks / rounds : null;
       } else if (gameMode === "countup") {
         finalScore = p.accumulatedScore;
+        scored = p.accumulatedScore;
         ppd = dartsThrown > 0 ? p.accumulatedScore / dartsThrown : null;
       }
 
@@ -377,6 +378,8 @@
         finalScore,
         ppd,
         mpr,
+        scored,
+        marks,
         checkoutSuccess,
       };
     });
@@ -398,14 +401,14 @@
           draws: 0,
           o1: {
             games: 0,
-            ppdSum: 0,
-            ppdCount: 0,
+            totalScored: 0,
+            totalDarts: 0,
             bestPpd: null,
             checkoutSuccesses: 0,
             checkoutAttempts: 0,
           },
-          cricket: { games: 0, mprSum: 0, mprCount: 0, bestMpr: null },
-          countup: { games: 0, ppdSum: 0, ppdCount: 0, bestPpd: null },
+          cricket: { games: 0, totalMarks: 0, totalRounds: 0, bestMpr: null },
+          countup: { games: 0, totalScored: 0, totalDarts: 0, bestPpd: null },
         });
       }
       const s = byKey.get(r.playerKey);
@@ -418,9 +421,22 @@
       if (r.gameMode === "01") {
         s.o1.games += 1;
         if (typeof r.ppd === "number" && Number.isFinite(r.ppd)) {
-          s.o1.ppdSum += r.ppd;
-          s.o1.ppdCount += 1;
           if (s.o1.bestPpd === null || r.ppd > s.o1.bestPpd) s.o1.bestPpd = r.ppd;
+        }
+        // 通算PPDは「総得点 ÷ 総ダーツ数」で重み付け平均する(各ゲームのPPDを単純平均すると、
+        // ダーツ数が少ないゲームと多いゲームが同じ重みになってしまい、実態と合わない値になる)。
+        // r.scoredが無い(移行前の古いレコード)場合はppd*dartsから復元する。
+        if (r.darts > 0) {
+          const scored =
+            typeof r.scored === "number" && Number.isFinite(r.scored)
+              ? r.scored
+              : typeof r.ppd === "number" && Number.isFinite(r.ppd)
+                ? r.ppd * r.darts
+                : null;
+          if (scored !== null) {
+            s.o1.totalScored += scored;
+            s.o1.totalDarts += r.darts;
+          }
         }
         if (r.checkoutSuccess !== null) {
           s.o1.checkoutAttempts += 1;
@@ -429,18 +445,39 @@
       } else if (r.gameMode === "cricket") {
         s.cricket.games += 1;
         if (typeof r.mpr === "number" && Number.isFinite(r.mpr)) {
-          s.cricket.mprSum += r.mpr;
-          s.cricket.mprCount += 1;
           if (s.cricket.bestMpr === null || r.mpr > s.cricket.bestMpr)
             s.cricket.bestMpr = r.mpr;
+        }
+        // MPRも同様に「総マーク数 ÷ 総ラウンド数」で重み付け平均する。
+        if (r.rounds > 0) {
+          const marks =
+            typeof r.marks === "number" && Number.isFinite(r.marks)
+              ? r.marks
+              : typeof r.mpr === "number" && Number.isFinite(r.mpr)
+                ? r.mpr * r.rounds
+                : null;
+          if (marks !== null) {
+            s.cricket.totalMarks += marks;
+            s.cricket.totalRounds += r.rounds;
+          }
         }
       } else if (r.gameMode === "countup") {
         s.countup.games += 1;
         if (typeof r.ppd === "number" && Number.isFinite(r.ppd)) {
-          s.countup.ppdSum += r.ppd;
-          s.countup.ppdCount += 1;
           if (s.countup.bestPpd === null || r.ppd > s.countup.bestPpd)
             s.countup.bestPpd = r.ppd;
+        }
+        if (r.darts > 0) {
+          const scored =
+            typeof r.scored === "number" && Number.isFinite(r.scored)
+              ? r.scored
+              : typeof r.ppd === "number" && Number.isFinite(r.ppd)
+                ? r.ppd * r.darts
+                : null;
+          if (scored !== null) {
+            s.countup.totalScored += scored;
+            s.countup.totalDarts += r.darts;
+          }
         }
       }
     });
@@ -457,19 +494,25 @@
           draws: s.draws,
           winRate: decided > 0 ? s.wins / decided : null,
           o1Games: s.o1.games,
-          o1AvgPpd: s.o1.ppdCount > 0 ? s.o1.ppdSum / s.o1.ppdCount : null,
+          // 総得点÷総ダーツ数の重み付け平均(各ゲームのPPDの単純平均ではない)
+          o1AvgPpd: s.o1.totalDarts > 0 ? s.o1.totalScored / s.o1.totalDarts : null,
           o1BestPpd: s.o1.bestPpd,
           o1CheckoutRate:
             s.o1.checkoutAttempts > 0
               ? s.o1.checkoutSuccesses / s.o1.checkoutAttempts
               : null,
           cricketGames: s.cricket.games,
+          // 総マーク数÷総ラウンド数の重み付け平均(各ゲームのMPRの単純平均ではない)
           cricketAvgMpr:
-            s.cricket.mprCount > 0 ? s.cricket.mprSum / s.cricket.mprCount : null,
+            s.cricket.totalRounds > 0
+              ? s.cricket.totalMarks / s.cricket.totalRounds
+              : null,
           cricketBestMpr: s.cricket.bestMpr,
           countupGames: s.countup.games,
           countupAvgPpd:
-            s.countup.ppdCount > 0 ? s.countup.ppdSum / s.countup.ppdCount : null,
+            s.countup.totalDarts > 0
+              ? s.countup.totalScored / s.countup.totalDarts
+              : null,
           countupBestPpd: s.countup.bestPpd,
         };
       })
