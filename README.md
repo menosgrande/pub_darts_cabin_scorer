@@ -88,6 +88,8 @@ js/          アプリ本体（機能単位で分割。非モジュールscript�
   camera/           カメラ自動採点モード関連（ゲームロジック本体からは独立した入力アダプター）
     camera-input.js   CameraInputPanel/CameraSlot（1〜2台のカメラ映像表示・デバイス選択。ダーツ検出は未実装）
     calibration.js    手動4点キャリブレーション・ホモグラフィ計算（computeHomography/applyHomographyは純粋関数、テスト済み）
+  hooks/            app-main.jsから責務ごとに抽出したカスタムフック（分割計画はSTATE_MANAGEMENT.md参照）
+    useSound.js       効果音・触覚フィードバック。Source of Truthに非依存で完全に自己完結
   app-main.js       Reactアプリ本体（State、イベントハンドラ、JSX）
 style.css    カスタムスタイル（Fliqlo風フリップ表示、Interフォント読み込みなど）
 tailwind.css Tailwind CSS
@@ -109,7 +111,7 @@ package.json テストランナー起動用（`npm test`）。アプリ本体は
 ```
 
 `js/`内は依存順に読み込む必要があります（`index.html`に記載の順序を変えないこと）:
-`constants.js` → `checkout.js` → `scoring.js` / `cpu.js`（どちらもcheckout.jsに依存、互いには非依存） → `ui-components.js` → `camera/camera-input.js` → `camera/calibration.js` → `app-main.js`
+`constants.js` → `checkout.js` → `scoring.js` / `cpu.js`（どちらもcheckout.jsに依存、互いには非依存） → `ui-components.js` → `camera/camera-input.js` → `camera/calibration.js` → `hooks/useSound.js` → `app-main.js`
 
 ## 開発メモ
 

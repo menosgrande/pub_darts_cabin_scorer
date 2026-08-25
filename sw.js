@@ -3,7 +3,7 @@
 //
 // 更新方針: CACHE_NAME のバージョンを上げると、新しいSWがインストールされ、
 // 古いキャッシュは activate 時に破棄される。ファイルを更新したら CACHE_VERSION を上げること。
-const CACHE_VERSION = "v21"; // v21: ルール判定をlabel文字列依存からisBull/score/bullRingの構造化データに変更
+const CACHE_VERSION = "v22"; // v22: app-main.js分割Phase1 - useSound()フックを抽出
 const CACHE_NAME = `pdcs-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
@@ -16,6 +16,7 @@ const PRECACHE_URLS = [
   "./js/ui-components.js",
   "./js/camera/camera-input.js",
   "./js/camera/calibration.js",
+  "./js/hooks/useSound.js",
   "./js/app-main.js",
   "./style.css",
   "./tailwind.css",

@@ -455,7 +455,7 @@ GAME SETUPモーダル上部の「📊 通算成績を見る」ボタンから�
 
 1. ~~**テストが0件**: `getRoundState`/`applyCricketDart`/`findCheckoutRoute`/`computeAuto01Scores`/`getFinishTargets`などは引数を渡せば結果が返る純粋関数に近く、テストを書くコストの割に効果が高い。~~ **対応済み**: `tests/`配下にNode組み込み`node:test`ベースのテストを追加。現在は9ファイル・計108件（盤面判定/BUST-OUT/クリケット/チェックアウトアシスト/通算成績/カメラキャリブレーション/関数横断の統合テストまでカバー）。`vm`モジュールで実ファイル(`constants.js`/`checkout.js`/`scoring.js`/`camera/calibration.js`)をそのまま読み込む方式にし、ロジックの書き写しはしていない。`npm test`または`node --test tests/*.test.js`で実行。
 2. **CPU側のコミット処理が人間側（`commitThrow`）と別実装のまま**: 上記6番の変更と合わせて見直す余地がある。stateの非同期更新の都合上、完全に同一関数にはまとめにくいが、少なくとも「1投分のダーツオブジェクトを作る」部分は共通化できる可能性がある
-3. **app-main.jsが依然3179行**: checkout/scoring/cpu/ui-componentsには分割済みだが、`function App()`本体は1つの巨大なコンポーネントのまま。セットアップ画面・プレイ画面・リザルト画面をサブコンポーネントに分ける余地はあるが、機能追加がまだ続いている間は急がなくてよい
+3. ~~**app-main.jsが依然3179行**: checkout/scoring/cpu/ui-componentsには分割済みだが、`function App()`本体は1つの巨大なコンポーネントのまま。~~ **対応中**: 責務マップと抽出方針を下記「app-main.js分割計画」に記載。Phase 1（低依存部分の抽出）から段階的に進めている
 
 ---
 
@@ -660,3 +660,43 @@ CPU難易度（`CPU_DIFFICULTY`の`numberAccuracy`/`ringWeights`）は感覚だ�
 > **すべての状態遷移は「UI状態」と「履歴状態」を分離して考え、PREVのみが履歴（`turnHistoryState`）を変更する唯一の操作である。**
 
 この一文が崩れたとき（CLEARやその他の操作が`turnHistoryState`を消費し始めたとき）、PREV系のバグが再発する。
+
+## app-main.js分割計画
+
+`app-main.js`(3600行前後、機能追加のたびに増える)を安全に分割するための責務マップと抽出方針。具体的な行数・関数数はすぐ古くなるので固定しない。
+
+### 責務マップ
+
+| 責務 | 内容 | Source of Truthへの依存 |
+|---|---|---|
+| 設定(Setup) State | ゲームモード/OUT設定/ハンデ/プレイヤー数など | 低（読むだけ、書くのはSetup UI自身） |
+| ゲームState(Source of Truth) | `players`/`activePlayerIndex`/`turnHistoryState`/`winner`/`confirmStage` | — (これ自体が中心) |
+| 一時入力State | `currentThrows`/`editingThrowIndex`/`padMultiplier`/`undoConfirmStage` | 高 |
+| Player生成/復元 | `makePlayer`/`sanitizeRestoredPlayer` | 中 |
+| Save/Restore | 自動保存/統計記録Effect、`migrateSaveData`、`handleRestoreSave` | 高（ゲームState全体を読み書き） |
+| 表示用派生値 | `cuDisplayScore`/`cricketDisplayScore`/`assistInfo` | 高（毎レンダー計算、state化しない） |
+| CPU | 自動投擲Effect、`cancelCpuTimer` | 高（Ref経由） |
+| サウンド | `initAudio`/`triggerHaptic`/`playSound` | **なし**（`soundEnabled`のみ） |
+| ゲーム開始 | `handleQuickStart`/`computeCricketSetup`/`handleStartGame` | 中（Setup State→ゲームState初期化） |
+| ターン進行(共通) | `commitThrow`/`handleKeypadTap`/`handleBoardClick`/PREV/UNDO/CLEAR/`handleCommitRound` | 最高 |
+| 画面遷移 | `handleBackToMenuRequest`/`handleLeaveToMenu` | 中 |
+| JSX: HowTo/Exit Confirm/STATS | モーダル表示 | 低〜中 |
+| JSX: GAME SETUPモーダル | Setup State約20個 + ゲーム開始系関数 | 中（Setup Stateのみ、ゲームStateには非依存） |
+| JSX: メイン画面(盤面/カメラ/Cockpit/キーパッド) | `currentThrows`/`players`/`commitThrow`等 | 最高 |
+| JSX: Result/Winnerモーダル | `winner`/`players` | 中 |
+
+### 抽出方針
+
+再設計はしない。既存の実装をそのまま該当ファイルへ移し、外部に公開するAPIだけ最小限に絞る（例: `useSound(soundEnabled)` → `{playSound, triggerHaptic, initAudio}`の3つだけ）。Source of Truthへの依存が低い順にボトムアップで進める。各Phase完了後は必ず`npm test`を全件通し、ゲームロジック・State・Ref同期に変更がないことを確認する。
+
+**Phase 1（低依存・実装済み）**: `useSound()`フックを`js/hooks/useSound.js`へ抽出。`audioCtxRef`も含め完全に自己完結。外部APIは`{playSound, triggerHaptic, initAudio}`のみ。app-main.js側は`const {playSound, triggerHaptic, initAudio} = useSound(soundEnabled);`の1行に置き換え。
+
+**Phase 1続き（未着手）**: HowTo/Exit Confirm/STATSモーダルをそれぞれ`js/components/`配下の純粋な表示コンポーネントとして抽出。
+
+**Phase 2（未着手）**: Save/Restore系（自動保存Effect・統計記録Effect・`migrateSaveData`・`handleRestoreSave`）。ゲームState全体を読み書きするため、フック化する場合は引数/戻り値の設計を慎重に決める。
+
+**Phase 3（未着手）**: CPU系（自動投擲Effect・`cancelCpuTimer`）。Ref同期ルールとの整合に特に注意。
+
+**Phase 4（未着手）**: GAME SETUPモーダル。Setup Stateのみに依存しゲームStateには非依存なので独立性は高いが、JSX自体が530行程度あるため分量に注意。
+
+**Phase 5（未着手・最も慎重に）**: メインゲーム画面（盤面/カメラ/Cockpit/キーパッド）と`commitThrow`/`handleCommitRound`。依存が最も複雑（01/Cricket/Count-Up分岐込み）なので、一気にコンポーネント化せず、状態依存が見えなくならないよう段階的に進める。
