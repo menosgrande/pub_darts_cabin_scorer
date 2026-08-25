@@ -46,14 +46,13 @@ const { useState, useEffect, useRef, useMemo } = React;
     const [p2Rating, setP2Rating] = useState(6);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [showHowTo, setShowHowTo] = useState(false);
+    const [inputMode, setInputMode] = useState("board"); // "board" | "camera"（カメラ自動採点への切り替え用。デフォルトは既存のタップ入力）
     const [showStats, setShowStats] = useState(false);
     const [showStatsResetConfirm, setShowStatsResetConfirm] = useState(false);
     const [showSettingsSetup, setShowSettingsSetup] = useState(true);
     const [showExitConfirm, setShowExitConfirm] = useState(false);
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
     const [hasRestorableSave, setHasRestorableSave] = useState(false);
-
-    const audioCtxRef = useRef(null);
 
     // ── プレイヤー状態 ──
     // 01ゲーム: remainingScore を使用
@@ -613,128 +612,9 @@ const { useState, useEffect, useRef, useMemo } = React;
       setUndoConfirmStage("idle");
     }, [currentThrows]);
 
-    // ── Audio ──
-    const initAudio = () => {
-      if (!audioCtxRef.current)
-        audioCtxRef.current = new (
-          window.AudioContext || window.webkitAudioContext
-        )();
-    };
-    // ダーツ入力の確定を触覚でも伝える。暗所・飲酒時のプレイでも「入力できた」が
-    // 指先だけで確信できるようにする（Vibration API非対応のブラウザ、特にiOS Safariでは
-    // navigator.vibrateが存在しないので何もしない＝安全に無視される）。
-    const triggerHaptic = (duration = 10) => {
-      if (typeof navigator !== "undefined" && navigator.vibrate) {
-        try { navigator.vibrate(duration); } catch (e) {}
-      }
-    };
-    const playSound = (type) => {
-      if (!soundEnabled) return;
-      try {
-        initAudio();
-        const ctx = audioCtxRef.current;
-        if (!ctx) return;
-        if (ctx.state === "suspended") ctx.resume();
-        const now = ctx.currentTime;
-        const mk = (type, freq, gain, dur, extra) => {
-          const o = ctx.createOscillator(),
-            g = ctx.createGain();
-          o.type = type;
-          o.frequency.setValueAtTime(freq, now);
-          if (extra) extra(o, g, now);
-          g.gain.setValueAtTime(gain, now);
-          g.gain.linearRampToValueAtTime(0, now + dur);
-          o.connect(g);
-          g.connect(ctx.destination);
-          o.start(now);
-          o.stop(now + dur + 0.02);
-        };
-        switch (type) {
-          case "click":
-            mk("triangle", 650, 0.06, 0.06, (o) => {
-              o.frequency.exponentialRampToValueAtTime(100, now + 0.05);
-            });
-            break;
-          case "revert":
-            mk("sine", 220, 0.08, 0.1, (o) => {
-              o.frequency.linearRampToValueAtTime(320, now + 0.1);
-            });
-            break;
-          case "hit-single":
-            mk("triangle", 160, 0.25, 0.1, (o) => {
-              o.frequency.exponentialRampToValueAtTime(60, now + 0.1);
-            });
-            break;
-          case "hit-double":
-            [440, 523].forEach((f, i) => {
-              const o = ctx.createOscillator(),
-                g = ctx.createGain();
-              o.type = "sine";
-              o.frequency.setValueAtTime(f, now + i * 0.03);
-              g.gain.setValueAtTime(0.12, now + i * 0.03);
-              g.gain.exponentialRampToValueAtTime(1e-3, now + 0.3);
-              o.connect(g);
-              g.connect(ctx.destination);
-              o.start(now + i * 0.03);
-              o.stop(now + 0.35);
-            });
-            break;
-          case "hit-triple":
-            [587, 698, 880].forEach((f, i) => {
-              const o = ctx.createOscillator(),
-                g = ctx.createGain();
-              o.type = "sine";
-              o.frequency.setValueAtTime(f, now + i * 0.04);
-              g.gain.setValueAtTime(0.1, now + i * 0.04);
-              g.gain.exponentialRampToValueAtTime(1e-3, now + 0.4);
-              o.connect(g);
-              g.connect(ctx.destination);
-              o.start(now + i * 0.04);
-              o.stop(now + 0.45);
-            });
-            break;
-          case "hit-bull":
-            {
-              const o1 = ctx.createOscillator(),
-                o2 = ctx.createOscillator(),
-                g = ctx.createGain();
-              o1.type = "sine";
-              o2.type = "sine";
-              o1.frequency.setValueAtTime(880, now);
-              o2.frequency.setValueAtTime(1109, now);
-              g.gain.setValueAtTime(0.15, now);
-              g.gain.exponentialRampToValueAtTime(1e-3, now + 0.6);
-              o1.connect(g);
-              o2.connect(g);
-              g.connect(ctx.destination);
-              o1.start();
-              o2.start();
-              o1.stop(now + 0.65);
-              o2.stop(now + 0.65);
-            }
-            break;
-          case "burst":
-            mk("sawtooth", 140, 0.1, 0.4, (o) => {
-              o.frequency.exponentialRampToValueAtTime(45, now + 0.4);
-            });
-            break;
-          case "victory":
-            [261, 329, 392, 523, 659, 783].forEach((f, i) => {
-              const o = ctx.createOscillator(),
-                g = ctx.createGain();
-              o.type = "triangle";
-              o.frequency.setValueAtTime(f, now + i * 0.08);
-              g.gain.setValueAtTime(0.08, now + i * 0.08);
-              g.gain.exponentialRampToValueAtTime(1e-3, now + 1.2);
-              o.connect(g);
-              g.connect(ctx.destination);
-              o.start(now + i * 0.08);
-              o.stop(now + 1.3);
-            });
-            break;
-        }
-      } catch (e) {}
-    };
+    // ── Audio ── useSound()フックへ抽出済み(js/hooks/useSound.js)。
+    // ここではsoundEnabledを渡してAPIを受け取るだけ。
+    const { playSound, triggerHaptic, initAudio } = useSound(soundEnabled);
 
     // ── クイックスタート ──
     // 「とりあえず501 Double Out」「とりあえずクリケット」で即開始するワンタップ導線。
@@ -1552,6 +1432,23 @@ const { useState, useEffect, useRef, useMemo } = React;
           React.createElement(
             "button",
             {
+              onClick: () => {
+                playSound("click");
+                setInputMode((m) => (m === "board" ? "camera" : "board"));
+              },
+              "aria-label":
+                inputMode === "board" ? "カメラ入力に切り替え" : "盤面タップ入力に切り替え",
+              className: `w-10 h-10 rounded-lg bg-[#141419] border flex items-center justify-center transition cursor-pointer ${
+                inputMode === "camera"
+                  ? "border-emerald-500/50 text-emerald-400"
+                  : "border-zinc-800 text-zinc-400 hover:text-emerald-400 hover:border-emerald-500/30"
+              }`,
+            },
+            React.createElement(Icons.Camera, null),
+          ),
+          React.createElement(
+            "button",
+            {
               onClick: () => setShowHowTo(true),
               "aria-label": helpLang === "ja" ? "使い方を表示" : "Show how to play",
               className:
@@ -1668,8 +1565,17 @@ const { useState, useEffect, useRef, useMemo } = React;
               }),
             ),
 
-            /* Dart Board */
-            React.createElement(
+            /* Dart Board / Camera 切り替え */
+            inputMode === "camera"
+              ? React.createElement(CameraInputPanel, {
+                  key: "camera-panel",
+                  bullType,
+                  onSwitchToBoard: () => {
+                    playSound("revert");
+                    setInputMode("board");
+                  },
+                })
+              : React.createElement(
               "div",
               {
                 className: `relative w-[42%] aspect-square flex items-center justify-center pointer-events-auto shrink-0 z-20 ${editingThrowIndex !== null ? "rounded-full ring-2 ring-sky-400/50 shadow-[0_0_28px_rgba(56,189,248,0.18)]" : ""}`,
@@ -3002,415 +2908,41 @@ const { useState, useEffect, useRef, useMemo } = React;
 
       /* ── Exit Confirm ── */
       showExitConfirm &&
-        React.createElement(
-          "div",
-          {
-            className:
-              "fixed inset-0 z-50 bg-black/95 backdrop-blur-lg flex items-center justify-center p-4",
-          },
-          React.createElement(
-            "div",
-            {
-              className: "setup-card max-w-sm w-full p-6 rounded-2xl space-y-4",
-            },
-            React.createElement(
-              "div",
-              { className: "text-center space-y-2" },
-              React.createElement(
-                "span",
-                { className: "text-3xl block" },
-                "🚨",
-              ),
-              React.createElement(
-                "h3",
-                {
-                  className:
-                    "text-xs font-black tracking-widest text-rose-500 uppercase",
-                },
-                "ゲームを終了",
-              ),
-              React.createElement(
-                "p",
-                { className: "text-[11px] text-zinc-400 leading-relaxed" },
-                "現在のゲームを終了してメニューに戻りますか？",
-                React.createElement("br", null),
-                React.createElement(
-                  "span",
-                  { className: "text-rose-500/80 font-bold" },
-                  "ターン履歴は消去されます。",
-                ),
-              ),
-            ),
-            React.createElement(
-              "div",
-              { className: "grid grid-cols-2 gap-3" },
-              React.createElement(
-                "button",
-                {
-                  onClick: () => {
-                    playSound("revert");
-                    setShowExitConfirm(false);
-                  },
-                  className:
-                    "py-3 bg-zinc-900 border border-zinc-700/60 text-zinc-400 text-xs font-bold rounded-xl cursor-pointer",
-                },
-                "キャンセル",
-              ),
-              React.createElement(
-                "button",
-                {
-                  onClick: handleLeaveToMenu,
-                  className:
-                    "py-3 bg-rose-600 border border-rose-500 text-white text-xs font-black rounded-xl cursor-pointer",
-                },
-                "終了する",
-              ),
-            ),
-          ),
-        ),
+        React.createElement(ExitConfirmModal, {
+          playSound,
+          onCancel: () => setShowExitConfirm(false),
+          onConfirm: handleLeaveToMenu,
+        }),
 
       /* ── How To ── */
       /* ── STATS Modal(通算成績) ── */
       showStats &&
-        (() => {
-          let records = [];
-          try {
-            const raw = localStorage.getItem(STATS_STORAGE_KEY);
-            const parsed = raw ? JSON.parse(raw) : [];
-            if (Array.isArray(parsed)) records = parsed;
-          } catch (e) {
-            // 壊れたデータは無視して空扱いにする(統計表示の失敗でアプリ全体を壊さない)
-          }
-          const summary = summarizePlayerStats(records);
-          const recentGames = [...records]
-            .sort((a, b) => b.ts - a.ts)
-            .slice(0, 15);
-          const fmtPct = (v) => (v === null ? "―" : `${Math.round(v * 100)}%`);
-          const fmtNum = (v, digits = 1) =>
-            v === null ? "―" : v.toFixed(digits);
-          const gameModeLabel = { "01": "01", cricket: "クリケット", countup: "カウントアップ" };
-
-          return React.createElement(
-            "div",
-            {
-              className:
-                "fixed inset-0 z-50 bg-black/90 backdrop-blur-md p-4 flex items-center justify-center",
-            },
-            React.createElement(
-              "div",
-              {
-                className:
-                  "setup-card max-w-sm w-full p-5 rounded-2xl space-y-4 no-scrollbar overflow-y-auto max-h-[85vh]",
-              },
-              React.createElement(
-                "div",
-                { className: "flex justify-between items-center" },
-                React.createElement(
-                  "h3",
-                  {
-                    className:
-                      "text-[10px] font-black tracking-widest text-amber-400 uppercase",
-                  },
-                  "📊 通算成績",
-                ),
-                React.createElement(
-                  "button",
-                  {
-                    onClick: () => {
-                      playSound("revert");
-                      setShowStats(false);
-                      setShowStatsResetConfirm(false);
-                    },
-                    className:
-                      "w-7 h-7 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white cursor-pointer",
-                  },
-                  React.createElement(Icons.X, null),
-                ),
-              ),
-
-              records.length === 0
-                ? React.createElement(
-                    "p",
-                    { className: "text-[11px] text-zinc-500 text-center py-6" },
-                    "まだ記録がありません。ゲームを1試合終えると、ここに成績が表示されます。",
-                  )
-                : React.createElement(
-                    React.Fragment,
-                    null,
-                    // ── プレイヤーごとの集計 ──
-                    React.createElement(
-                      "div",
-                      { className: "space-y-2" },
-                      summary.map((s) =>
-                        React.createElement(
-                          "div",
-                          {
-                            key: s.playerKey,
-                            className:
-                              "bg-zinc-900/60 rounded-xl p-3 border border-zinc-800/60 space-y-1.5",
-                          },
-                          React.createElement(
-                            "div",
-                            { className: "flex items-baseline justify-between" },
-                            React.createElement(
-                              "p",
-                              { className: "text-[12px] font-black text-white" },
-                              s.playerName,
-                            ),
-                            React.createElement(
-                              "p",
-                              { className: "text-[9px] text-zinc-500 font-mono" },
-                              `${s.gamesPlayed}試合 (${s.wins}勝${s.losses}敗${s.draws > 0 ? `${s.draws}分` : ""})`,
-                            ),
-                          ),
-                          React.createElement(
-                            "div",
-                            {
-                              className:
-                                "grid grid-cols-3 gap-2 text-center pt-1 border-t border-zinc-800/60",
-                            },
-                            React.createElement(
-                              "div",
-                              null,
-                              React.createElement(
-                                "p",
-                                { className: "text-[13px] font-black text-amber-300" },
-                                fmtPct(s.winRate),
-                              ),
-                              React.createElement(
-                                "p",
-                                { className: "text-[8px] text-zinc-600 tracking-wide" },
-                                "勝率",
-                              ),
-                            ),
-                            s.o1Games > 0 &&
-                              React.createElement(
-                                "div",
-                                null,
-                                React.createElement(
-                                  "p",
-                                  { className: "text-[13px] font-black text-emerald-300" },
-                                  fmtNum(s.o1AvgPpd, 1),
-                                ),
-                                React.createElement(
-                                  "p",
-                                  { className: "text-[8px] text-zinc-600 tracking-wide" },
-                                  "平均PPD(01)",
-                                ),
-                              ),
-                            s.o1Games > 0 &&
-                              React.createElement(
-                                "div",
-                                null,
-                                React.createElement(
-                                  "p",
-                                  { className: "text-[13px] font-black text-sky-300" },
-                                  fmtPct(s.o1CheckoutRate),
-                                ),
-                                React.createElement(
-                                  "p",
-                                  { className: "text-[8px] text-zinc-600 tracking-wide" },
-                                  "上がり率",
-                                ),
-                              ),
-                            s.cricketGames > 0 &&
-                              React.createElement(
-                                "div",
-                                null,
-                                React.createElement(
-                                  "p",
-                                  { className: "text-[13px] font-black text-fuchsia-300" },
-                                  fmtNum(s.cricketAvgMpr, 2),
-                                ),
-                                React.createElement(
-                                  "p",
-                                  { className: "text-[8px] text-zinc-600 tracking-wide" },
-                                  "平均MPR",
-                                ),
-                              ),
-                            s.countupGames > 0 &&
-                              React.createElement(
-                                "div",
-                                null,
-                                React.createElement(
-                                  "p",
-                                  { className: "text-[13px] font-black text-emerald-300" },
-                                  fmtNum(s.countupAvgPpd, 1),
-                                ),
-                                React.createElement(
-                                  "p",
-                                  { className: "text-[8px] text-zinc-600 tracking-wide" },
-                                  "平均PPD(CU)",
-                                ),
-                              ),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // ── 最近のゲーム ──
-                    React.createElement(
-                      "div",
-                      { className: "space-y-1.5" },
-                      React.createElement(
-                        "p",
-                        { className: "setup-section-label" },
-                        "最近のゲーム",
-                      ),
-                      React.createElement(
-                        "div",
-                        { className: "space-y-1 max-h-40 overflow-y-auto no-scrollbar" },
-                        recentGames.map((r, i) =>
-                          React.createElement(
-                            "div",
-                            {
-                              key: `${r.ts}-${i}`,
-                              className:
-                                "flex items-center justify-between text-[10px] bg-zinc-900/40 rounded-lg px-2.5 py-1.5",
-                            },
-                            React.createElement(
-                              "span",
-                              { className: "text-zinc-300 font-bold" },
-                              r.playerName,
-                            ),
-                            React.createElement(
-                              "span",
-                              { className: "text-zinc-600" },
-                              gameModeLabel[r.gameMode] || r.gameMode,
-                            ),
-                            React.createElement(
-                              "span",
-                              {
-                                className:
-                                  r.win === true
-                                    ? "text-emerald-400 font-black"
-                                    : r.isDraw
-                                      ? "text-zinc-400 font-black"
-                                      : r.win === false
-                                        ? "text-rose-400 font-black"
-                                        : "text-zinc-500",
-                              },
-                              r.win === true
-                                ? "WIN"
-                                : r.isDraw
-                                  ? "DRAW"
-                                  : r.win === false
-                                    ? "LOSE"
-                                    : "―",
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // ── リセット ──
-                    React.createElement(
-                      "div",
-                      { className: "pt-1" },
-                      showStatsResetConfirm
-                        ? React.createElement(
-                            "div",
-                            { className: "flex gap-2" },
-                            React.createElement(
-                              "button",
-                              {
-                                onClick: () => {
-                                  playSound("click");
-                                  setShowStatsResetConfirm(false);
-                                },
-                                className:
-                                  "flex-1 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 text-[10px] font-black cursor-pointer",
-                              },
-                              "キャンセル",
-                            ),
-                            React.createElement(
-                              "button",
-                              {
-                                onClick: () => {
-                                  try {
-                                    localStorage.removeItem(STATS_STORAGE_KEY);
-                                  } catch (e) {}
-                                  playSound("click");
-                                  setShowStatsResetConfirm(false);
-                                  setShowStats(false);
-                                },
-                                className:
-                                  "flex-1 py-2 rounded-xl bg-rose-600 border border-rose-500 text-white text-[10px] font-black cursor-pointer",
-                              },
-                              "全部消去する",
-                            ),
-                          )
-                        : React.createElement(
-                            "button",
-                            {
-                              onClick: () => {
-                                playSound("click");
-                                setShowStatsResetConfirm(true);
-                              },
-                              className:
-                                "w-full py-2 rounded-xl bg-zinc-900/60 border border-zinc-800/60 text-zinc-600 text-[9px] font-bold cursor-pointer hover:text-rose-400 transition",
-                            },
-                            "統計をリセット",
-                          ),
-                    ),
-                  ),
-            ),
-          );
-        })(),
+        React.createElement(StatsModal, {
+          playSound,
+          showStatsResetConfirm,
+          onClose: () => {
+            setShowStats(false);
+            setShowStatsResetConfirm(false);
+          },
+          onRequestReset: () => setShowStatsResetConfirm(true),
+          onCancelReset: () => setShowStatsResetConfirm(false),
+          onConfirmReset: () => {
+            try {
+              localStorage.removeItem(STATS_STORAGE_KEY);
+            } catch (e) {}
+            setShowStatsResetConfirm(false);
+            setShowStats(false);
+          },
+        }),
 
       /* ── HowTo Modal ── */
-      showHowTo && (() => {
-        const isJa = helpLang !== "en"; // デフォルト日本語
-        const helpItems = isJa ? [
-          ["1. 入力", "盤面を直接タップするか、テンキーを使います。S/D/T でシングル・ダブル・トリプルを選んでから数字をタップ。"],
-          ["2. 編集", "3つのダーツスロットをタップすると上書き編集できます。UNDOで1投取り消し、CLEARでターン全消去。"],
-          ["3. アレンジ (01)", "上部バーに標準チェックアウトルートが表示されます。"],
-          ["4. Count-Up", "各プレイヤーが3投×Nラウンド投げて合計点を競います。"],
-          ["5. CPU対戦", "設定で🤖CPUをONにすると、AIが自動で投げます。難易度は EASY〜PRO から選べます。"],
-          ["6. PREV TURN", "PREV（戻る）ボタンで前のターンに戻れます。throwing中は2回押し確認、next中は1回で即戻り。"],
-        ] : [
-          ["1. Input", "Tap the board directly or use the keypad. Choose S/D/T (Single/Double/Triple) then tap the number."],
-          ["2. Edit", "Tap a dart slot to overwrite. UNDO removes the last dart, CLEAR wipes the whole turn."],
-          ["3. Assist (01)", "The top bar shows the standard checkout route for your remaining score."],
-          ["4. Count-Up", "Players throw 3 darts × N rounds and accumulate points. Highest total wins."],
-          ["5. CPU Match", "Enable 🤖 CPU in the setup to play against AI. Choose difficulty from EASY to PRO."],
-          ["6. PREV TURN", "PREV button undoes the previous turn. Press twice during throwing, once after OK."],
-        ];
-        return React.createElement("div", {
-          className: "fixed inset-0 z-50 bg-black/90 backdrop-blur-md p-4 flex items-center justify-center",
-        },
-          React.createElement("div", {
-            className: "setup-card max-w-sm w-full p-5 rounded-2xl space-y-4 no-scrollbar overflow-y-auto max-h-[85vh]",
-          },
-            React.createElement("div", { className: "flex justify-between items-center" },
-              React.createElement("h3", { className: "text-[10px] font-black tracking-widest text-amber-400 uppercase" },
-                isJa ? "クイックヘルプ" : "QUICK HELP"),
-              React.createElement("div", { className: "flex items-center gap-2" },
-                React.createElement("button", {
-                  onClick: () => { playSound("click"); setHelpLang(l=>l==="ja"?"en":"ja"); },
-                  className: "px-2 py-1 rounded-lg bg-zinc-800 border border-zinc-700 text-[9px] font-black text-zinc-400 hover:text-amber-400 cursor-pointer transition",
-                }, isJa ? "EN" : "JP"),
-                React.createElement("button", {
-                  onClick: () => { playSound("revert"); setShowHowTo(false); },
-                  className: "w-7 h-7 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white cursor-pointer",
-                }, React.createElement(Icons.X, null)),
-              ),
-            ),
-            React.createElement("div", { className: "space-y-3" },
-              helpItems.map(([title, body]) =>
-                React.createElement("div", { key: title, className: "bg-zinc-900/60 rounded-xl p-3 border border-zinc-800/60" },
-                  React.createElement("p", { className: "text-[10px] font-black text-amber-300 mb-1" }, title),
-                  React.createElement("p", { className: "text-[11px] text-zinc-300 leading-relaxed" }, body),
-                )
-              ),
-            ),
-            React.createElement("button", {
-              onClick: () => { playSound("revert"); setShowHowTo(false); },
-              className: "w-full py-2 bg-zinc-900 border border-zinc-800 text-zinc-500 font-bold text-[10px] rounded-xl cursor-pointer hover:text-zinc-300 transition",
-            }, isJa ? "閉じる" : "CLOSE"),
-          ),
-        );
-      })(),
+      showHowTo &&
+        React.createElement(HowToModal, {
+          helpLang,
+          setHelpLang,
+          playSound,
+          onClose: () => setShowHowTo(false),
+        }),
 
       /* ── Winner / Count-Up Result ── */
       winner &&
