@@ -58,39 +58,8 @@ const { useState, useEffect, useRef, useMemo } = React;
     // 01ゲーム: remainingScore を使用
     // Count-Up: accumulatedScore を使用
     // Cricket: cricketMarks(ナンバーごとのマーク数) / cricketScore を使用
-    const makePlayer = (id, name, startScore, handicapMarks, handicapCount, initialCricketScore) => ({
-      id,
-      name,
-      initialScore: startScore,
-      remainingScore: startScore,
-      accumulatedScore: 0,
-      cricketMarks: handicapMarks || makeEmptyCricketMarks(),
-      cricketScore: initialCricketScore || 0, // DL2オートハンデのボーナス得点（手動ハンデ時は常に0）
-      cricketHandicap: handicapCount || 0, // セットアップ画面復元用（原則7: 派生値ではなく設定値そのものを保持）
-      history: [],
-    });
-
-    // 壊れた/古い形式のセーブデータからプレイヤーを復元する際、欠損フィールドを安全なデフォルトで
-    // 埋める。localStorageの手動編集や旧バージョンのデータでフィールドが欠けていても、
-    // 後段のgetCricketRoundState等が undefined参照でクラッシュしないようにするための防御。
-    const sanitizeRestoredPlayer = (p, id, fallbackName) => {
-      if (!p || typeof p !== "object") return makePlayer(id, fallbackName, 501);
-      const initialScore = Number.isFinite(p.initialScore) ? p.initialScore : 501;
-      return {
-        id: typeof p.id === "string" ? p.id : id,
-        name: typeof p.name === "string" ? p.name : fallbackName,
-        initialScore,
-        remainingScore: Number.isFinite(p.remainingScore) ? p.remainingScore : initialScore,
-        accumulatedScore: Number.isFinite(p.accumulatedScore) ? p.accumulatedScore : 0,
-        cricketMarks:
-          p.cricketMarks && typeof p.cricketMarks === "object"
-            ? { ...makeEmptyCricketMarks(), ...p.cricketMarks }
-            : makeEmptyCricketMarks(),
-        cricketScore: Number.isFinite(p.cricketScore) ? p.cricketScore : 0,
-        cricketHandicap: Number.isFinite(p.cricketHandicap) ? p.cricketHandicap : 0,
-        history: Array.isArray(p.history) ? p.history : [],
-      };
-    };
+    // makePlayer / sanitizeRestoredPlayer は js/game/save-utils.js へ抽出済み
+    // （React StateにもlocalStorageにも依存しない純粋関数のため）。
 
     const [players, setPlayers] = useState([
       makePlayer("p1", "PLAYER 1", 501),
@@ -1121,55 +1090,9 @@ const { useState, useEffect, useRef, useMemo } = React;
     // ═══════════════════════════════════════════════════════════════════
     // ◆ SECTION: Save / Restore Helpers (App内部)
     // セーブデータの読み書き・バージョン移行・バリデーション。React state setterを直接呼ぶため
-    // App()の外には出していない（migrateSaveData自体は純粋関数）。
+    // App()の外には出していない。migrateSaveData自体は純粋関数のため
+    // js/game/save-utils.js へ抽出済み（makePlayer/sanitizeRestoredPlayerと同様）。
     // ═══════════════════════════════════════════════════════════════════
-    // ── セーブデータ migration 枠 ──
-    // version が上がるたびに、ここに旧バージョンからの変換処理を追加する。
-    // 現状は変換不要のため中身は空だが、枠を用意しておくことで
-    // 将来のフィールド追加・構造変更時に対応しやすくする。
-    //
-    // 戻り値が null の場合、呼び出し側（handleRestoreSave）は復元を拒否する。
-    const migrateSaveData = (save) => {
-      const v = save.version ?? 0;
-
-      // 未来バージョン（このアプリより新しい形式）は復元しない。
-      // 例: v7で保存したデータを、まだv6のままのアプリで開いた場合。
-      // 中身を無理に読むと構造不一致でクラッシュする可能性があるため拒否する。
-      if (v > CURRENT_SAVE_VERSION) {
-        console.warn(`セーブデータのバージョン(${v})がアプリの対応バージョン(${CURRENT_SAVE_VERSION})より新しいため復元をスキップしました。`);
-        return null;
-      }
-
-      switch (v) {
-        case 0:
-        case 1:
-        case 2:
-        case 3:
-        case 4:
-        case 5:
-        case 6:
-          // 旧バージョン: 現状は構造変更なしなのでそのまま通す。
-          // v7でgameMode="cricket"とplayer.cricketMarks/cricketScoreを追加したが、
-          // どちらも「無ければ未使用として扱われるだけ」の追加フィールドなので変換不要。
-          // falls through
-        case 7:
-          // v7→v8: o1MaxRounds を maxRounds にリネーム。
-          // クリケットにも同じラウンド上限設定を適用できるよう、01専用の名前を汎用化した。
-          if (save.o1MaxRounds !== undefined && save.maxRounds === undefined) {
-            save.maxRounds = save.o1MaxRounds;
-          }
-          // falls through
-        case 8:
-          // v8→v9: autoHandicap01/p1Rating/p2Rating/autoHandicapCricket/
-          // manualCricketMarksP1/P2/manualCricketBonusP1/P2 を新規追加。
-          // 旧セーブには存在しないが、handleRestoreSave側で未定義時のフォールバック
-          // （off・レーティング6・マーク全0・ボーナス0）を用意しているため変換不要。
-          break;
-        default:
-          break;
-      }
-      return save;
-    };
 
     const handleRestoreSave = () => {
       try {
