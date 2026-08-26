@@ -691,9 +691,17 @@ CPU難易度（`CPU_DIFFICULTY`の`numberAccuracy`/`ringWeights`）は感覚だ�
 
 **Phase 1（低依存・完了）**: `useSound()`フックを`js/hooks/useSound.js`へ抽出。`audioCtxRef`も含め完全に自己完結。外部APIは`{playSound, triggerHaptic, initAudio}`のみ。app-main.js側は`const {playSound, triggerHaptic, initAudio} = useSound(soundEnabled);`の1行に置き換え。
 
+**Phase 1（低依存・完了）**: `useSound()`フックを`js/hooks/useSound.js`へ抽出。`audioCtxRef`も含め完全に自己完結。外部APIは`{playSound, triggerHaptic, initAudio}`のみ。app-main.js側は`const {playSound, triggerHaptic, initAudio} = useSound(soundEnabled);`の1行に置き換え。
+
 **Phase 1.5（低依存UI・完了）**: `HowToModal`/`ExitConfirmModal`/`StatsModal`を`js/components/`配下へ純粋な表示コンポーネントとして抽出。再設計はせず、元のJSXをそのまま移し、外部propsだけ最小限に絞った（例: `StatsModal`は`{playSound, showStatsResetConfirm, onClose, onRequestReset, onCancelReset, onConfirmReset}`のみ）。`StatsModal`のlocalStorage読み込み・`summarizePlayerStats`呼び出しは、このPhaseでは意図的にコンポーネント内に残したまま（データ取得ロジックの別Hook化は将来の課題として先送り）。`localStorage.removeItem`（実際の削除実行）はapp-main.js側の`onConfirmReset`ハンドラに残し、`StatsModal`自体は表示とコールバック呼び出しに徹する設計にした。
 
-Phase 1全体で`app-main.js`は3586行→3091行（495行減、目的は行数削減自体ではなく責務境界の確立）。各ステップ後に`npm test`（108件）と構文チェックを実施し、ゲームロジック・Source of Truth・Ref同期に変更がないことを確認済み。
+Phase 1全体で`app-main.js`は3586行→3091行（495行減、目的は行数削減自体ではなく責務境界の確立）。
+
+**Phase 2-A（純粋変換処理のみ・完了）**: `makePlayer`/`sanitizeRestoredPlayer`/`migrateSaveData`を`js/game/save-utils.js`へ抽出。いずれもReact StateにもlocalStorageにも直接依存しない純粋関数。`tests/saveUtils.test.js`でカバー（makePlayerの各パターン、sanitizeRestoredPlayerの欠損値/不正値/型不一致、migrateSaveDataのバージョン変換/未来バージョン拒否、計16件追加）。
+
+**Phase 2-B（State/Ref依存部分・意図的に保留）**: 自動保存Effect・`handleRestoreSave`・`clearSavedGame`・`refreshRestorableSave`・`setCurrentThrowsImmediate`は`app-main.js`に残したまま。理由は、これらがapp-main.jsのstateのほぼ全部（27個中）に直接触れており、Phase 1/2-Aのような「低結合な部分をそのまま移す」という手法が通用しないため。無理に`useSaveRestore()`のようなHookへ切り出すと、「27個のstate setterを引数で受け取るだけの関数」になり複雑さの削減にならない。`hasRestorableSave`が複数箇所（自動保存Effect成功時/`refreshRestorableSave`/`handleRestoreSave`）から独立に書き込まれている点、`setCurrentThrowsImmediate`が`currentThrowsRef`とstateの二重書き込み同期を担っている点も、今回のPhaseでは触らず現状維持とした。これらは「Save/Restoreの分離」ではなく「Source of Truthのアーキテクチャ再設計（`useReducer`化を含む）」という別の設計問題であり、今の27個のuseStateを見て安易にuseReducer化を判断すべきではない（useReducerはstate遷移を整理するための道具であり、useStateの数が多いことそのものが導入理由にはならない）。将来Source of Truthを再設計するタイミングで、あらためて評価する。
+
+Phase 2-Aで`app-main.js`は3091行→3014行（77行減）。各Phase完了後に`npm test`と構文チェックを実施し、ゲームロジック・Source of Truth・Ref同期に変更がないことを確認済み。
 
 **Phase 2（未着手）**: Save/Restore系（自動保存Effect・統計記録Effect・`migrateSaveData`・`handleRestoreSave`）。ゲームState全体を読み書きするため、フック化する場合は引数/戻り値の設計を慎重に決める。
 

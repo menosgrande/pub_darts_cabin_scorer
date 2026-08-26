@@ -94,6 +94,8 @@ js/          アプリ本体（機能単位で分割。非モジュールscript�
     HowToModal.js     クイックヘルプモーダル
     ExitConfirmModal.js  ゲーム終了確認モーダル
     StatsModal.js     通算成績モーダル（localStorage読み込み・集計呼び出しはこのコンポーネント内）
+  game/             Save/Restoreの純粋変換処理（分割計画はSTATE_MANAGEMENT.md参照）
+    save-utils.js     makePlayer/sanitizeRestoredPlayer/migrateSaveData。React State/localStorageには非依存
   app-main.js       Reactアプリ本体（State、イベントハンドラ、JSX）
 style.css    カスタムスタイル（Fliqlo風フリップ表示、Interフォント読み込みなど）
 tailwind.css Tailwind CSS
@@ -111,11 +113,12 @@ tests/       Node組み込み(node:test)によるゲームロジックの自動�
   gameStats.test.js           通算成績の集計ロジックのテスト
   calibration.test.js         カメラキャリブレーション(ホモグラフィ計算)のテスト
   integration.test.js         関数横断の統合テスト(ハイライト/アシスト提案が実際にfinishするかを全パターン検証)
+  saveUtils.test.js           Save/Restoreの純粋変換処理(makePlayer/sanitizeRestoredPlayer/migrateSaveData)のテスト
 package.json テストランナー起動用（`npm test`）。アプリ本体はビルド不要・依存パッケージなしのまま
 ```
 
 `js/`内は依存順に読み込む必要があります（`index.html`に記載の順序を変えないこと）:
-`constants.js` → `checkout.js` → `scoring.js` / `cpu.js`（どちらもcheckout.jsに依存、互いには非依存） → `ui-components.js` → `camera/camera-input.js` → `camera/calibration.js` → `hooks/useSound.js` → `components/HowToModal.js` → `components/ExitConfirmModal.js` → `components/StatsModal.js` → `app-main.js`
+`constants.js` → `checkout.js` → `game/save-utils.js` → `scoring.js` / `cpu.js`（どちらもcheckout.jsに依存、互いには非依存） → `ui-components.js` → `camera/camera-input.js` → `camera/calibration.js` → `hooks/useSound.js` → `components/HowToModal.js` → `components/ExitConfirmModal.js` → `components/StatsModal.js` → `app-main.js`
 
 ## 開発メモ
 
