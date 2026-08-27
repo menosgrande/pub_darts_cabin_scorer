@@ -114,6 +114,7 @@ tests/       Node組み込み(node:test)によるゲームロジックの自動�
   calibration.test.js         カメラキャリブレーション(ホモグラフィ計算)のテスト
   integration.test.js         関数横断の統合テスト(ハイライト/アシスト提案が実際にfinishするかを全パターン検証)
   saveUtils.test.js           Save/Restoreの純粋変換処理(makePlayer/sanitizeRestoredPlayer/migrateSaveData)のテスト
+  cpu.test.js                 CPU AIの純粋関数テスト(決定論的テスト/不変条件テスト/契約テストの3層構成)
 package.json テストランナー起動用（`npm test`）。アプリ本体はビルド不要・依存パッケージなしのまま
 ```
 

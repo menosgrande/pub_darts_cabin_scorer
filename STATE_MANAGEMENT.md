@@ -705,7 +705,24 @@ Phase 2-Aで`app-main.js`は3091行→3014行（77行減）。各Phase完了後�
 
 **Phase 2（未着手）**: Save/Restore系（自動保存Effect・統計記録Effect・`migrateSaveData`・`handleRestoreSave`）。ゲームState全体を読み書きするため、フック化する場合は引数/戻り値の設計を慎重に決める。
 
-**Phase 3（未着手）**: CPU系（自動投擲Effect・`cancelCpuTimer`）。Ref同期ルールとの整合に特に注意。
+**Phase 3-A/B（CPU構造分析・完了、コードは未変更）**: `js/cpu.js`（281行、Throw生成のみを担う独立ロジック）と`app-main.js`のCPU自動投擲Effect（301-417行）、および人間側`handleCommitRound`（900-1088行）を突き合わせて分析した。
+
+- CPUは`getRoundState`/`getCricketRoundState`/`getSubtotal`という**人間と同じ採点関数**を使っており、CPU専用の採点ルールは存在しない（採点バグの懸念なし）
+- ただし「投擲結果を`players`/`winner`/`confirmStage`へ反映する手続き」（`node`生成→`players`更新→勝敗判定→ラウンド上限判定、01/クリケット/カウントアップの3分岐）は、`handleCommitRound`とCPU Effectに**ほぼ同じ形で重複している**
+- 唯一の本質的な違い: 人間側は投擲確定後`confirmStage="next"`で一旦止まりユーザーのNEXT待ちになるが、CPU側は待つ相手がいないため即座に次のプレイヤーへ進む。これは統合時も残すべき正しい非対称性であり、単純に「重複を消せばよい」わけではない
+- CPU Effectは`setTimeout`コールバック内で`playersRef`/`activePlayerIndexRef`/`gameModeRef`/`outModeRef`/`bullTypeRef`/`cpuDifficultyRef`/`cuRoundsRef`/`playerCountRef`/`maxRoundsRef`/`winnerRef`の10個のRefを読む（Effectのクロージャが古いstateを掴む問題を避けるため、意図的にRef経由に統一されている）
+- `cancelCpuTimer`は`cpuCommitRef.current`（キャンセルフラグ+`clearTimeout`）を呼ぶだけの薄い実装で、PREV/クイックスタート/リストア/`handleCommitRound`など複数箇所から呼ばれる
+
+**Phase 3-C（cpu.js純粋関数のテスト・完了）**: `cpuComputeThrow`/`cpuPlayTurn`/`cpuComputeCricketThrow`/`cpuPlayCricketTurn`に`tests/cpu.test.js`を追加（27件）。CPU AIの確率分布そのものは固定せず、3層で検証する構成にした:
+- 決定論的テスト: `Math.random`を定数関数(0 または 0.999999)に差し替え、min/max付近の境界での挙動を固定（vmサンドボックスとテストファイルは同一の`Math`オブジェクト参照を共有しているため、テスト側での差し替えがそのまま`cpu.js`側に反映される）
+- 不変条件テスト: 本物の`Math.random`で300回×4難易度を実行し、投擲数が常に3以下・各投擲のscore/multiplier/labelが常に合法値であることを確認
+- 契約テスト: 「PROは有利な条件でチェックアウトを決められる」「EASYでも不正なThrowを生成しない」「Cricketは自分の未クローズを優先し、全クローズ後は相手の未クローズへ切り替える」等、difficultyや戦略の大枠を確認（個々のランダム値の並びには依存しない）
+
+意図的にCricketの優先順位判定・チェックアウト成功判定を壊して、対応するテストが実際に落ちることを確認済み（前者2件、後者2件、いずれも復元後は151件全パスに復帰）。
+
+Phase 3-Cの時点で`app-main.js`のCPUターン制御（自動投擲Effect・`cancelCpuTimer`）には一切手を入れていない。
+
+**Phase 3-D（未着手・要判断）**: `handleCommitRound`とCPU Effectで重複している「投擲結果をSource of Truthへ反映する手続き」を、共通の純粋関数（例: `commitRoundResult(player, players, activePlayerIndex, throws, gameMode, outMode, playerCount, maxRounds, cuRounds) → {mp, winner, isGameOver}`）に切り出せるかを検討する。ここはPhase 2-Bと同様に`players`/`winner`/`confirmStage`という複数のSource of Truthに同時に触れる変更になるため、Phase 3-Cでcpu.js側の挙動をテストで固定してから着手する。人間側の「next待ち」とCPU側の「即座に進む」という非対称性は、共通化後も維持する設計にする。
 
 **Phase 4（未着手）**: GAME SETUPモーダル。Setup Stateのみに依存しゲームStateには非依存なので独立性は高いが、JSX自体が530行程度あるため分量に注意。
 
