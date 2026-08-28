@@ -28,6 +28,30 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- ── 読み込み失敗時のフォールバック ──
+         スクリプトタグが15個に増えた(app-main.js分割による)ため、キャビンの不安定な
+         Wi-Fi/モバイル回線で1本でも読み込みに失敗すると、Reactが一切マウントされず
+         背景色(#050508)だけの画面で無言のまま止まってしまう(#rootが空のまま)。
+         この<script>は#root直後に置き、他のどのJSにも依存しないインラインの
+         見張り役として、一定時間後も#rootが空なら再読み込みを促す表示を出す。
+         正常に起動すればReactが#rootへ内容を描画するので、このフォールバックは
+         一切表示されない。 -->
+    <script>
+      (function () {
+        setTimeout(function () {
+          var root = document.getElementById("root");
+          if (root && root.children.length === 0) {
+            root.innerHTML =
+              '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;font-family:system-ui,-apple-system,sans-serif;color:#e4e4e7;background:#050508;">' +
+              '<p style="font-size:14px;line-height:1.6;">読み込みに失敗しました。<br>電波状況をご確認のうえ、再読み込みしてください。</p>' +
+              '<button onclick="location.reload()" style="padding:10px 24px;border-radius:12px;background:#f59e0b;color:#050508;font-weight:900;border:none;font-size:13px;">再読み込み</button>' +
+              "</div>";
+          }
+        }, 8000);
+      })();
+    </script>
+
     <!-- app.jsが長大化したため機能単位で分割（js/）。非モジュールscriptなので、
          この順で読み込むことでグローバルスコープにconstが積み上がっていく。
          file://での直接オープンでも動作する（type="module"にするとCORSでブロックされるため避けている）。

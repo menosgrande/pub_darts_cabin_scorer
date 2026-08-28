@@ -3,7 +3,7 @@
 //
 // 更新方針: CACHE_NAME のバージョンを上げると、新しいSWがインストールされ、
 // 古いキャッシュは activate 時に破棄される。ファイルを更新したら CACHE_VERSION を上げること。
-const CACHE_VERSION = "v24"; // v24: app-main.js分割Phase2-A - Save/Restoreの純粋変換処理をsave-utils.jsへ抽出
+const CACHE_VERSION = "v25"; // v25: index.htmlに読み込み失敗フォールバック(8秒後に#root空なら再読み込み案内)を追加
 const CACHE_NAME = `pdcs-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [

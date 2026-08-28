@@ -653,6 +653,16 @@ CPU難易度（`CPU_DIFFICULTY`の`numberAccuracy`/`ringWeights`）は感覚だ�
 
 `getFinishTargets(remaining, outMode)`（checkout.js）が、残り点数とアウト設定から「あと1投で0にできる」セグメント一覧を返す。盤面側は既存のfill色ロジック（クリケットの状態色分けなど）を一切変更せず、該当するダブル/トリプル/Bullの上に半透明の緑白オーバーレイ（`pointer-events: none`、`.finish-target-pulse`でパルスアニメーション）を重ねるだけにしている。**教訓（設計判断）**: 既存の色分けロジックに新しい条件を混ぜ込むと分岐が爆発的に複雑化するため、「新しい視覚情報は独立したオーバーレイ層として追加する」方針を取った方が、他の状態（クリケットの色分け等）を壊すリスクが低い。
 
+### iPhoneの一部で「背景色だけ表示され、UIが一切出ない」現象（修正済み）
+
+app-main.js分割（Phase 1〜3）が進んだ結果、`index.html`の`<script src>`が6個→15個に増えた。このアプリは非モジュールscript（`type="module"`不使用、`file://`直開き対応のため）で、`ReactDOM.createRoot(...).render(...)`は最後に読み込まれる`app-main.js`の中で実行される。**キャビン設置のWi-Fi/モバイル回線が不安定な状況で、15本のうちどれか1本（特に一番最後で一番重要なapp-main.js）が読み込みに失敗すると、Reactが一切マウントされず、`<meta name="background-color" content="#050508">`由来の背景色だけが表示されたまま、何のエラー表示もなく静止する**。ユーザー報告「iPhoneによってはなぜか背景のみしか出ていないことがあった」はこれに該当すると考えられる。ファイル数が増えるほど、単発のネットワーク瞬断がアプリ全体の起動失敗に直結するリスクが上がる、という分割の副作用。
+
+sw.jsの`install`ハンドラも、`Promise.allSettled`で個々のprecache失敗を握りつぶして`self.skipWaiting()`を呼ぶ設計になっている（1ファイルの404で全体のインストールが失敗しないようにするための意図的な設計）ため、precache段階で一部ファイルの取得に失敗していても、SW自体は「インストール成功」として動き続ける。その後オフライン/回線不調時に該当ファイルへの`fetch`が発生すると、キャッシュにもネットワークにも無く`Response.error()`が返り、同じ「スクリプト読み込み失敗」に繋がる。
+
+**修正内容**: `index.html`の`#root`直後に、他のどのJSファイルにも依存しない完全に独立したインラインscriptを追加。8秒経っても`#root`が空（=Reactが一度もマウントしていない）なら、「読み込みに失敗しました。電波状況をご確認のうえ、再読み込みしてください」という案内と再読み込みボタンを直接`#root`へ挿入する。正常に起動していれば`#root`に子要素が入っているため、このフォールバックは一切表示されない。
+
+**教訓**: ファイル分割によってapp-main.jsの保守性を上げる一方で、「読み込むファイル数が増える＝起動時に失敗しうるポイントが増える」というトレードオフが生まれる。特にネットワークが不安定な実機設置（キャビン）を想定するアプリでは、分割を進めるたびに「1本でも読み込みに失敗したらどうなるか」を都度考える必要がある。今回のような無言の失敗（エラーも出さず、ただ背景だけが残る）は、ユーザーからは「なぜか」としか説明できない不具合として報告されるため、再現条件を絞り込みにくい。可視化されたフォールバックを用意しておくことで、少なくとも「壊れている」ことをユーザー自身が判断でき、再読み込みで復旧できる可能性が上がる。
+
 ---
 
 
@@ -722,7 +732,28 @@ Phase 2-Aで`app-main.js`は3091行→3014行（77行減）。各Phase完了後�
 
 Phase 3-Cの時点で`app-main.js`のCPUターン制御（自動投擲Effect・`cancelCpuTimer`）には一切手を入れていない。
 
-**Phase 3-D（未着手・要判断）**: `handleCommitRound`とCPU Effectで重複している「投擲結果をSource of Truthへ反映する手続き」を、共通の純粋関数（例: `commitRoundResult(player, players, activePlayerIndex, throws, gameMode, outMode, playerCount, maxRounds, cuRounds) → {mp, winner, isGameOver}`）に切り出せるかを検討する。ここはPhase 2-Bと同様に`players`/`winner`/`confirmStage`という複数のSource of Truthに同時に触れる変更になるため、Phase 3-Cでcpu.js側の挙動をテストで固定してから着手する。人間側の「next待ち」とCPU側の「即座に進む」という非対称性は、共通化後も維持する設計にする。
+**Phase 3-D-分析（完了、コード変更なし）**: `handleCommitRound`（900-1088行）とCPU Effect（305-417行）を8段階に分解して1行ずつ突き合わせた。
+
+| 段階 | 内容 | 判定 |
+|---|---|---|
+| ①Throw正規化 | Human=`commitThrow`経由、CPU=`cpuPlayTurn`/`cpuPlayCricketTurn`経由 | 出力形は既に同一。①自体の共通化は不要 |
+| ②ラウンド採点 | `getRoundState`/`getCricketRoundState`/`getSubtotal` | **完全に同一のコード** |
+| ③node生成 | `{roundNum, throws, roundScore, ...}` | **完全に同一のコード**（変数名の違いのみ） |
+| ④player state更新 | `players.map((p,i)=>i===activePlayerIndex?{...}:p)`パターン | **完全に同一のコード** |
+| ⑤winner判定 | 01: `nextRem===0`／Cricket: `checkCricketWinner` | **ほぼ同一**（Count-Upのみ⑤の概念がなく⑥に統合） |
+| ⑥ラウンド上限判定 | `maxRounds!==null && isLastPlayer && nextRoundNum>=maxRounds` | CPU側は`isLastPlayer`チェックを省略（コメントに「CPU(idx=1)は常にラストプレイヤー」と明記された意図的な簡略化。今は正しいが、CPUが将来P1になる可能性を考えると前提として脆い） |
+| ⑦ターン遷移 | Human: `confirmStage="next"`で一旦停止／CPU: 即座に次プレイヤーへ | **意図的な差、維持すべき** |
+| ⑧confirmStage制御 | Human: 2段階（コミット→next待ち→NEXT押下）／CPU: 1段階（コミットと同時に進行） | **意図的な差、維持すべき** |
+
+8段階以外に見つかった差分（共通化時に個別対応が必要）:
+- CPU固有の「全ドロップ」ケース（3投とも投げ損ない）はHuman側に対応する状態がなく、共通関数の外側でCPU固有の前処理として残す必要がある
+- CPU固有の`winnerRef`二重チェックは`setTimeout`による非同期実行のための安全策で、同期実行のHumanには不要
+- `setEditingThrowIndex(null)`はHuman専用（CPUにはダーツスロット編集の概念がない）
+- Cricketの`opponentsMarks`計算がCPU側で2回重複している（投擲生成時・採点時）。Human/CPUの非対称性ではなくCPU内部だけの独立した無駄で、共通化とは別に直せる
+
+**結論**: ②③④⑤⑥を`computeRoundResult({gameMode, activePlayer, players, activePlayerIndex, throws, outMode, playerCount, maxRounds, cuRounds, isLastPlayer, opponentsMarks}) → {mp, isGameOver, winner}`という純粋関数に切り出せる。⑦⑧（ターン遷移・confirmStage制御）はHuman/CPUで意図的に異なるため、切り出さずそれぞれの呼び出し元に残す。共通化の副次効果として、`isLastPlayer`をCPU側にも明示的に渡す設計にすれば「CPUは常にP2」という暗黙の前提への依存を解消でき、正確性が向上する。
+
+**Phase 3-D-実装（未着手）**: 上記の`computeRoundResult`を切り出す。`players`/`winner`/`confirmStage`という複数のSource of Truthに同時に触れる変更になるため、実装後は`integration.test.js`と`fatBullDoubleOut.test.js`（fat Bull + Double Outの回帰ケースを含む）を必ず通し、Human経路・CPU経路の両方が同じ採点結果になることを確認する。CPU固有の前処理（全ドロップケース、winnerRef二重チェック）とHuman固有の後処理（confirmStage制御、setEditingThrowIndex）は共通関数の外側に残す設計にする。
 
 **Phase 4（未着手）**: GAME SETUPモーダル。Setup Stateのみに依存しゲームStateには非依存なので独立性は高いが、JSX自体が530行程度あるため分量に注意。
 
