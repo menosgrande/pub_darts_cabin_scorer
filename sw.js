@@ -3,7 +3,7 @@
 //
 // 更新方針: CACHE_NAME のバージョンを上げると、新しいSWがインストールされ、
 // 古いキャッシュは activate 時に破棄される。ファイルを更新したら CACHE_VERSION を上げること。
-const CACHE_VERSION = "v25"; // v25: index.htmlに読み込み失敗フォールバック(8秒後に#root空なら再読み込み案内)を追加
+const CACHE_VERSION = "v26"; // v26: Phase 3-D - Human側をcomputeRoundResult(round-commit.js)経由に変更
 const CACHE_NAME = `pdcs-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
@@ -12,6 +12,7 @@ const PRECACHE_URLS = [
   "./js/constants.js",
   "./js/checkout.js",
   "./js/game/save-utils.js",
+  "./js/game/round-commit.js",
   "./js/scoring.js",
   "./js/cpu.js",
   "./js/ui-components.js",

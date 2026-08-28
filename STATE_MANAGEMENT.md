@@ -653,15 +653,20 @@ CPU難易度（`CPU_DIFFICULTY`の`numberAccuracy`/`ringWeights`）は感覚だ�
 
 `getFinishTargets(remaining, outMode)`（checkout.js）が、残り点数とアウト設定から「あと1投で0にできる」セグメント一覧を返す。盤面側は既存のfill色ロジック（クリケットの状態色分けなど）を一切変更せず、該当するダブル/トリプル/Bullの上に半透明の緑白オーバーレイ（`pointer-events: none`、`.finish-target-pulse`でパルスアニメーション）を重ねるだけにしている。**教訓（設計判断）**: 既存の色分けロジックに新しい条件を混ぜ込むと分岐が爆発的に複雑化するため、「新しい視覚情報は独立したオーバーレイ層として追加する」方針を取った方が、他の状態（クリケットの色分け等）を壊すリスクが低い。
 
-### iPhoneの一部で「背景色だけ表示され、UIが一切出ない」現象（修正済み）
+### iPhoneの一部で「背景色だけ表示され、UIが一切出ない」事象（原因未確定・フォールバック追加済み）
 
-app-main.js分割（Phase 1〜3）が進んだ結果、`index.html`の`<script src>`が6個→15個に増えた。このアプリは非モジュールscript（`type="module"`不使用、`file://`直開き対応のため）で、`ReactDOM.createRoot(...).render(...)`は最後に読み込まれる`app-main.js`の中で実行される。**キャビン設置のWi-Fi/モバイル回線が不安定な状況で、15本のうちどれか1本（特に一番最後で一番重要なapp-main.js）が読み込みに失敗すると、Reactが一切マウントされず、`<meta name="background-color" content="#050508">`由来の背景色だけが表示されたまま、何のエラー表示もなく静止する**。ユーザー報告「iPhoneによってはなぜか背景のみしか出ていないことがあった」はこれに該当すると考えられる。ファイル数が増えるほど、単発のネットワーク瞬断がアプリ全体の起動失敗に直結するリスクが上がる、という分割の副作用。
+ユーザー報告「iPhoneによってはなぜか背景のみしか出ていないことがあった」を受けて調査した。app-main.js分割（Phase 1〜3）が進んだ結果、`index.html`の`<script src>`が6個→15個に増えている。このアプリは非モジュールscript（`type="module"`不使用、`file://`直開き対応のため）で、`ReactDOM.createRoot(...).render(...)`は最後に読み込まれる`app-main.js`の中で実行される。**このアプリの構造上、15本のうちどれか1本の読み込みに失敗すると、Reactが一切マウントされず、`<meta name="background-color" content="#050508">`由来の背景色だけが表示されたまま、何のエラー表示もなく静止する状態になり得る**——これがユーザー報告と一致する原因候補として判明した。ただし、実際に以下のどれが起きていたのかは実機で確認できておらず、**断定はしていない**：
 
-sw.jsの`install`ハンドラも、`Promise.allSettled`で個々のprecache失敗を握りつぶして`self.skipWaiting()`を呼ぶ設計になっている（1ファイルの404で全体のインストールが失敗しないようにするための意図的な設計）ため、precache段階で一部ファイルの取得に失敗していても、SW自体は「インストール成功」として動き続ける。その後オフライン/回線不調時に該当ファイルへの`fetch`が発生すると、キャッシュにもネットワークにも無く`Response.error()`が返り、同じ「スクリプト読み込み失敗」に繋がる。
+- `app-main.js`（または他の分割JS）自体の読み込み失敗（ネットワーク瞬断等）
+- Service Workerの古いキャッシュとの不整合
+- JS実行時例外
+- iOS Safari固有の実行問題
 
-**修正内容**: `index.html`の`#root`直後に、他のどのJSファイルにも依存しない完全に独立したインラインscriptを追加。8秒経っても`#root`が空（=Reactが一度もマウントしていない）なら、「読み込みに失敗しました。電波状況をご確認のうえ、再読み込みしてください」という案内と再読み込みボタンを直接`#root`へ挿入する。正常に起動していれば`#root`に子要素が入っているため、このフォールバックは一切表示されない。
+上記は「原因候補の1つ」であり「原因の確定」ではない。切り分けるには、実機での再現条件（iOSバージョン、Wi-Fi/モバイル回線、ホーム画面追加後か通常のSafariタブか、コンソールログ等）の情報が必要。
 
-**教訓**: ファイル分割によってapp-main.jsの保守性を上げる一方で、「読み込むファイル数が増える＝起動時に失敗しうるポイントが増える」というトレードオフが生まれる。特にネットワークが不安定な実機設置（キャビン）を想定するアプリでは、分割を進めるたびに「1本でも読み込みに失敗したらどうなるか」を都度考える必要がある。今回のような無言の失敗（エラーも出さず、ただ背景だけが残る）は、ユーザーからは「なぜか」としか説明できない不具合として報告されるため、再現条件を絞り込みにくい。可視化されたフォールバックを用意しておくことで、少なくとも「壊れている」ことをユーザー自身が判断でき、再読み込みで復旧できる可能性が上がる。
+**対処内容（原因そのものの修正ではなく、失敗時の可観測性とユーザー回復手段の追加）**: `index.html`の`#root`直後に、他のどのJSファイルにも依存しない独立したインラインscriptを追加。8秒経っても`#root`が空（=Reactが一度もマウントしていない）なら、「読み込みに失敗しました。電波状況をご確認のうえ、再読み込みしてください」という案内と再読み込みボタンを`#root`へ挿入する。正常に起動していれば`#root`に子要素が入っているため、このフォールバックは一切表示されない（シミュレーションで両ケースとも動作確認済み）。
+
+**教訓**: ファイル分割によってapp-main.jsの保守性を上げる一方で、「読み込むファイル数が増える＝起動時に失敗しうるポイントが増える」というトレードオフが生まれる。特にネットワークが不安定な実機設置（キャビン）を想定するアプリでは、分割を進めるたびに「1本でも読み込みに失敗したらどうなるか」を都度考える必要がある。今回のような無言の失敗（エラーも出さず、ただ背景だけが残る）は、ユーザーからは「なぜか」としか説明できない不具合として報告されるため、再現条件を絞り込みにくい。可視化されたフォールバックを用意しておくことで、少なくとも「壊れている」ことをユーザー自身が判断でき、再読み込みで復旧できる可能性が上がる——ただしこれは症状への対処であり、根本原因が判明した場合は別途対応が必要になる可能性がある。
 
 ---
 
@@ -753,7 +758,25 @@ Phase 3-Cの時点で`app-main.js`のCPUターン制御（自動投擲Effect・`
 
 **結論**: ②③④⑤⑥を`computeRoundResult({gameMode, activePlayer, players, activePlayerIndex, throws, outMode, playerCount, maxRounds, cuRounds, isLastPlayer, opponentsMarks}) → {mp, isGameOver, winner}`という純粋関数に切り出せる。⑦⑧（ターン遷移・confirmStage制御）はHuman/CPUで意図的に異なるため、切り出さずそれぞれの呼び出し元に残す。共通化の副次効果として、`isLastPlayer`をCPU側にも明示的に渡す設計にすれば「CPUは常にP2」という暗黙の前提への依存を解消でき、正確性が向上する。
 
-**Phase 3-D-実装（未着手）**: 上記の`computeRoundResult`を切り出す。`players`/`winner`/`confirmStage`という複数のSource of Truthに同時に触れる変更になるため、実装後は`integration.test.js`と`fatBullDoubleOut.test.js`（fat Bull + Double Outの回帰ケースを含む）を必ず通し、Human経路・CPU経路の両方が同じ採点結果になることを確認する。CPU固有の前処理（全ドロップケース、winnerRef二重チェック）とHuman固有の後処理（confirmStage制御、setEditingThrowIndex）は共通関数の外側に残す設計にする。
+**Phase 3-D-実装（完了）**: `computeRoundResult`を`js/game/round-commit.js`へ切り出した（②③④⑤⑥のみ。①⑦⑧は対象外、当初の分析通り）。以下の順で段階的に置換した:
+
+1. `computeRoundResult`新設（純粋関数。`players`/`activePlayerIndex`/`gameMode`/`throws`と、`{outMode, playerCount, maxRounds, cuRounds, isLastPlayer, opponentsMarks}`を受け取り、`{players, node, isGameOver, winner, resultType}`を返す）
+2. `tests/roundCommit.test.js`で単体テスト追加（18件。01/Cricket/Count-Upの通常進行・バースト・チェックアウト・ラウンド上限・Draw、および**fat Bull + Double Outの回帰ケース**を含む）
+3. Human側（`handleCommitRound`の"throwing"分岐）を`computeRoundResult`経由に置換
+4. 全テスト実行（169件全パス）
+5. CPU側（自動投擲Effect）を`computeRoundResult`経由に置換
+6. 全テスト再実行（169件全パス）
+7. `integration.test.js`（26件）・`fatBullDoubleOut.test.js`（14件）を単独実行して確認（計40件全パス）
+
+**この置換で見つかった、元コードの既存の非対称性（今回は挙動を変えず、そのまま踏襲した）**:
+- Human側: ゲームオーバー時、01のみ`setCurrentThrowsImmediate([])`/`setEditingThrowIndex(null)`を呼んでいなかった（Cricket/Count-Upは呼んでいた）
+- CPU側: ゲームオーバー時、Count-Upのみ`setCurrentThrowsImmediate([])`を呼んでいた（Cricket/01は呼んでいなかった）
+
+これらはリファクタリング対象と別の問題（表示上の後片付け漏れの可能性）として切り分けており、今回は意図的に手を付けていない。修正する場合は、まず「本来どちらの挙動が正しいのか」をゲームプレイ上で確認してから、別タスクとして対応する。
+
+**この置換で解消した設計上の脆さ**: CPU側は元々「CPU(idx=1)は常にラストプレイヤー」という暗黙の前提でラウンド上限判定の`isLastPlayer`チェックを省略していた。`computeRoundResult`は`isLastPlayer`を必須パラメータにしたため、CPU側もHuman側と同じ計算式（`playerCount === 1 || activePlayerIndex === playerCount - 1`）で明示的に求めるようになり、その暗黙の前提への依存が解消された。また、CPU側でCricketの`opponentsMarks`を2回計算していた重複（Throw生成時・採点時）も、1回の計算を再利用する形に統合した。CPU側の`winnerRef`二重チェック（旧コードでは採点後にもう一度確認していた）も、`computeRoundResult`が同期的な単一関数呼び出しになったことで実質的に不要になったため削除した（呼び出し前の1回のチェックのみ残した）。
+
+**達成できたこと**: Human/CPUのどちらの経路でも、②ラウンド採点③node生成④players更新⑤winner判定⑥ラウンド上限判定は完全に同じコードを通るようになった。⑦ターン遷移（Human: `confirmStage="next"`で待つ／CPU: 即座に次へ）と⑧confirmStage制御は意図通り両経路で異なるまま残っている。
 
 **Phase 4（未着手）**: GAME SETUPモーダル。Setup Stateのみに依存しゲームStateには非依存なので独立性は高いが、JSX自体が530行程度あるため分量に注意。
 
