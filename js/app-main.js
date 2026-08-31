@@ -300,13 +300,54 @@ const { useState, useEffect, useRef, useMemo } = React;
       players.every((p) => p.history.length >= cuRounds);
 
     // ── CPU自動投擲 ──
-    // 設計: タイマー1本、全stateをRefで読む、cancelledフラグで確実クリーンアップ
+    // 設計: タイマー1本(+1投ごとの追加タイマー)、全stateをRefで読む、cancelledフラグで確実クリーンアップ。
+    // 1投ずつ順番に盤面へ表示し(人間側がcommitThrowで1投ずつcurrentThrowsに追加していく見た目と揃える)、
+    // 全投擲(バースト等での早期終了含む)を表示し終えた後に初めてゲームStateへ確定コミットする。
+    // ラウンド確定ロジック自体(computeRoundResult)はPhase 3-Dで共通化済みのため変更不要
+    // (STATE_MANAGEMENT.md「6. CPUを1投ずつ投げるように変更する」参照)。
     const cpuCommitRef = useRef(null);
     useEffect(() => {
       if (!isCpuTurn) return;
       let cancelled = false;
+      // 現在スケジュール中のタイマーIDを保持する可変変数。setTimeoutを呼ぶたびに
+      // ここへ再代入するだけで、cpuCommitRef.current(クロージャ経由でこの変数を参照)は
+      // 常に「今アクティブな1本のタイマー」を正しくキャンセルできる。
+      let currentTid = null;
       const totalDelay = 900 + Math.random() * 700;
-      const tid = setTimeout(() => {
+
+      // 全投擲の表示が終わった後、1回だけ呼ばれる確定コミット処理。
+      // Phase 3-D以前はここが「1投ずつ表示」と「State確定」を同時にやっていたが、
+      // 分離してもcomputeRoundResultへ渡す内容は変わらない。
+      const commitResult = (p, idx, gm, om, pc, cu, cpuThrows, opponentsMarks) => {
+        const isLastPlayer = pc === 1 || idx === (pc - 1);
+        const result = computeRoundResult(p, idx, gm, cpuThrows, {
+          outMode: om,
+          playerCount: pc,
+          maxRounds: maxRoundsRef.current,
+          cuRounds: cu,
+          isLastPlayer,
+          opponentsMarks: gm === "cricket" ? opponentsMarks : undefined,
+        });
+        setPlayers(result.players);
+        if (result.isGameOver) {
+          setConfirmStage("gameover");
+          // 元実装はCount-UpのCPUゲームオーバー時のみsetCurrentThrowsImmediate([])を
+          // 呼んでおり、Cricket/01のCPUゲームオーバー時は呼んでいなかった(Human側の
+          // 「01だけ呼ばない」という非対称とはまた別の非対称)。この変更で新たに
+          // 挙動を変えないよう、その非対称性をそのまま踏襲する
+          // (STATE_MANAGEMENT.md「Phase 3-D」に別課題として記録済み)。
+          if (gm === "countup") setCurrentThrowsImmediate([]);
+          playSound("victory");
+          setWinner(result.winner);
+        } else {
+          playSound("click");
+          setCurrentThrowsImmediate([]);
+          setActivePlayerIndex(0);
+          setConfirmStage("throwing");
+        }
+      };
+
+      currentTid = setTimeout(() => {
         if (cancelled) return;
         const p = playersRef.current;
         const idx = activePlayerIndexRef.current;
@@ -319,6 +360,8 @@ const { useState, useEffect, useRef, useMemo } = React;
         const pc = playerCountRef.current;
         const remaining = gm === "countup" ? 9999 : pl.remainingScore;
         const opponentsMarks = pc === 1 ? [] : p.filter((_, i) => i !== idx).map((pp) => pp.cricketMarks);
+        // cpuPlayTurn/cpuPlayCricketTurnは従来通り3投分(バースト等での早期終了含む)を
+        // まとめて計算する。変えるのは「その結果を画面にどう出すか」だけ。
         const cpuThrows = gm === "cricket"
           ? cpuPlayCricketTurn(pl.cricketMarks, opponentsMarks, diff)
           : cpuPlayTurn(remaining, gm, om, diff, bt);
@@ -334,84 +377,29 @@ const { useState, useEffect, useRef, useMemo } = React;
           return;
         }
         const snap = { players: cloneDeep(p), activePlayerIndex: idx };
-        setCurrentThrowsImmediate(cpuThrows);
-        if (cancelled) { setCurrentThrowsImmediate([]); return; }
         setTurnHistoryState(prev => [...prev, snap].slice(-20));
-        if (gm === "countup") {
-          const pts = getSubtotal(cpuThrows);
-          const node = { roundNum: pl.history.length + 1, throws: cpuThrows, roundScore: pts };
-          const mp = p.map((pp, i) => i === idx
-            ? { ...pp, accumulatedScore: pp.accumulatedScore + pts, history: [node, ...pp.history] } : pp);
-          setPlayers(mp);
-          const rel = pc === 1 ? [mp[0]] : mp;
-          if (rel.every(pp => pp.history.length >= cu)) {
-            const isDraw = pc === 1 ? false : mp[0].accumulatedScore === mp[1].accumulatedScore;
-            const w = pc === 1 ? mp[0] : (isDraw || mp[0].accumulatedScore > mp[1].accumulatedScore) ? mp[0] : mp[1];
-            setConfirmStage("gameover"); setCurrentThrowsImmediate([]);
-            playSound("victory");
-            setWinner({ ...w, countUpResult: true, isDraw, scores: rel.map(pp => ({ name: pp.name, score: pp.accumulatedScore })) });
-          } else {
-            playSound("click"); setCurrentThrowsImmediate([]); setActivePlayerIndex(0); setConfirmStage("throwing");
-          }
-        } else if (gm === "cricket") {
-          const oppMarksList = pc === 1 ? [] : p.filter((_, i) => i !== idx).map((pp) => pp.cricketMarks);
-          const result = getCricketRoundState(pl.cricketMarks, pl.cricketScore, cpuThrows, oppMarksList);
-          const node = { roundNum: pl.history.length + 1, throws: cpuThrows, roundScore: result.pointsThisTurn, cricketMarks: result.marks, cricketScore: result.score };
-          const mp = p.map((pp, i) => i === idx ? { ...pp, cricketMarks: result.marks, cricketScore: result.score, history: [node, ...pp.history] } : pp);
-          setPlayers(mp);
-          const others = pc === 1 ? [] : mp.filter((_, i) => i !== idx);
-          if (checkCricketWinner(mp[idx], others)) {
-            setConfirmStage("gameover"); playSound("victory");
-            setWinner({ ...mp[idx], cricketResult: true, isDraw: false, scores: (pc === 1 ? [mp[idx]] : mp).map(pp => ({ name: pp.name, score: pp.cricketScore })) });
-          } else {
-            // CPUターン終了後のラウンド上限チェック（winnerRefで二重ゲームオーバー防止。CPU(idx=1)は常にラストプレイヤー）
-            if (winnerRef.current) return;
-            const crMax = maxRoundsRef.current;
-            const nextRoundNum = mp[idx].history.length;
-            if (crMax !== null && nextRoundNum >= crMax) {
-              const relevant = pc === 1 ? [mp[0]] : mp.slice(0, 2);
-              const maxScore = Math.max(...relevant.map(pp => pp.cricketScore));
-              const winners = relevant.filter(pp => pp.cricketScore === maxScore);
-              const isDraw = winners.length > 1;
-              const w = isDraw ? { ...winners[0], id: null } : winners[0];
-              setConfirmStage("gameover"); playSound("victory");
-              setWinner({ ...w, cricketResult: true, isDraw, scores: relevant.map(pp => ({ name: pp.name, score: pp.cricketScore })) });
+
+        // 1投ずつ、間隔を置いて盤面へ表示する。全投擲を表示し終えた時点で
+        // 初めてcommitResultを呼び、ゲームStateへ確定コミットする。
+        const scheduleThrow = (i, shown) => {
+          currentTid = setTimeout(() => {
+            if (cancelled) return;
+            const next = [...shown, cpuThrows[i]];
+            setCurrentThrowsImmediate(next);
+            playSound(getHitSoundType(cpuThrows[i]));
+            if (i + 1 < cpuThrows.length) {
+              scheduleThrow(i + 1, next);
             } else {
-              playSound("click"); setCurrentThrowsImmediate([]); setActivePlayerIndex(0); setConfirmStage("throwing");
+              commitResult(p, idx, gm, om, pc, cu, cpuThrows, opponentsMarks);
             }
-          }
-        } else {
-          const freshState = getRoundState(pl.remainingScore, cpuThrows, om);
-          const nextRem = freshState.remainingScore;
-          const node = { roundNum: pl.history.length + 1, throws: cpuThrows, roundScore: freshState.subtotal, remainingScore: nextRem, isBust: freshState.isBust };
-          const mp = p.map((pp, i) => i === idx ? { ...pp, remainingScore: nextRem, history: [node, ...pp.history] } : pp);
-          setPlayers(mp);
-          if (nextRem === 0) {
-            setConfirmStage("gameover"); playSound("victory"); setWinner(mp[idx]);
-          } else {
-            // CPUターン終了後のラウンド上限チェック（winnerRefで二重ゲームオーバー防止）
-            if (winnerRef.current) return;
-            const o1MaxR = maxRoundsRef.current;
-            const nextRoundNum = mp[idx].history.length;
-            // CPU(idx=1)は常にラストプレイヤー
-            if (o1MaxR !== null && nextRoundNum >= o1MaxR) {
-              const relevant = pc === 1 ? [mp[0]] : mp.slice(0, 2);
-              const minRem = Math.min(...relevant.map(pp => pp.remainingScore));
-              const winners = relevant.filter(pp => pp.remainingScore === minRem);
-              const isDraw = winners.length > 1;
-              const w = isDraw ? { ...winners[0], id: null } : winners[0];
-              setConfirmStage("gameover"); playSound("victory");
-              setWinner({ ...w, o1RoundResult: true, isDraw, scores: relevant.map(pp => ({ name: pp.name, score: pp.remainingScore })) });
-            } else {
-              playSound("click"); setCurrentThrowsImmediate([]); setActivePlayerIndex(0); setConfirmStage("throwing");
-            }
-          }
-        }
+          }, 400 + Math.random() * 350);
+        };
+        scheduleThrow(0, []);
       }, totalDelay);
-      cpuCommitRef.current = () => { cancelled = true; clearTimeout(tid); };
+      cpuCommitRef.current = () => { cancelled = true; if (currentTid) clearTimeout(currentTid); };
       return () => {
         cancelled = true;
-        clearTimeout(tid);
+        if (currentTid) clearTimeout(currentTid);
         cpuCommitRef.current = null;
       };
     }, [isCpuTurn]);
@@ -910,169 +898,44 @@ const { useState, useEffect, useRef, useMemo } = React;
         // maxRounds上限判定は「全員が同ラウンド数を打ち終えた後」にのみ行うため、
         // ラストプレイヤーのターンかどうかを01/クリケット共通で先に確定しておく。
         const isLastPlayer = playerCount === 1 || activePlayerIndex === (playerCount - 1);
+        const opponentsMarks =
+          gameMode === "cricket"
+            ? playerCount === 1
+              ? []
+              : players.filter((_, i) => i !== activePlayerIndex).map((p) => p.cricketMarks)
+            : undefined;
 
-        if (gameMode === "countup") {
-          // Count-Up: 累積加算（このブロックは必ず1回だけ実行）
-          const pts = getSubtotal(liveThrows);
-          const node = {
-            roundNum: activePlayer.history.length + 1,
-            throws: liveThrows,
-            roundScore: pts,
-          };
-          const mp = players.map((p, i) =>
-            i === activePlayerIndex
-              ? {
-                  ...p,
-                  accumulatedScore: p.accumulatedScore + pts,
-                  history: [node, ...p.history],
-                }
-              : p,
-          );
-          setPlayers(mp);
+        // ラウンド採点→node生成→players更新→勝敗判定→ラウンド上限判定は
+        // CPU側(自動投擲Effect)と完全に同じロジックなので、共通の純粋関数へ委譲する
+        // （js/game/round-commit.js。詳細はSTATE_MANAGEMENT.md「Phase 3-D」参照）。
+        // ここに残るのはHuman固有の関心事(confirmStage制御・NEXT待ち・
+        // editingThrowIndex)だけにする。
+        const result = computeRoundResult(players, activePlayerIndex, gameMode, liveThrows, {
+          outMode,
+          playerCount,
+          maxRounds,
+          cuRounds,
+          isLastPlayer,
+          opponentsMarks,
+        });
 
-          // setPlayers後のmpで終了判定（Reactのstate更新は非同期なのでmpを直接使う）
-          // 1P時はP1(index=0)だけが全ラウンド終了で終了
-          const relevantPlayers = (playerCount === 1) ? [mp[0]] : mp;
-          const bothDone = relevantPlayers.every((p) => p.history.length >= cuRounds);
-          if (bothDone) {
-            // ゲーム終了: confirmStage="gameover"で以降の入力を完全遮断
-            // SOLO時はrelevantPlayers([mp[0]])だけで判定・表示する（P2の初期値0が紛れ込まないように）
-            const isDraw =
-              playerCount === 1
-                ? false
-                : mp[0].accumulatedScore === mp[1].accumulatedScore;
-            const w =
-              playerCount === 1
-                ? mp[0]
-                : isDraw || mp[0].accumulatedScore > mp[1].accumulatedScore
-                  ? mp[0]
-                  : mp[1];
-            setConfirmStage("gameover");
+        setPlayers(result.players);
+
+        if (result.isGameOver) {
+          setConfirmStage("gameover");
+          // 元実装は01のゲームオーバー時のみsetCurrentThrowsImmediate/
+          // setEditingThrowIndexを呼んでいなかった(Cricket/Count-Upは呼んでいた)。
+          // この置換で新たに挙動を変えないよう、その非対称性をそのまま踏襲する
+          // (STATE_MANAGEMENT.md「Phase 3-D」に別課題として記録済み)。
+          if (gameMode !== "01") {
             setCurrentThrowsImmediate([]);
             setEditingThrowIndex(null);
-            playSound("victory");
-            setWinner({
-              ...w,
-              countUpResult: true,
-              isDraw,
-              scores: relevantPlayers.map((p) => ({
-                name: p.name,
-                score: p.accumulatedScore,
-              })),
-            });
-          } else {
-            playSound("click");
-            setConfirmStage("next");
           }
-        } else if (gameMode === "cricket") {
-          // Cricket: 現在のダーツをマーク/得点に反映
-          const opponentsMarks = playerCount === 1
-            ? []
-            : players.filter((_, i) => i !== activePlayerIndex).map((p) => p.cricketMarks);
-          const result = getCricketRoundState(
-            activePlayer.cricketMarks,
-            activePlayer.cricketScore,
-            liveThrows,
-            opponentsMarks,
-          );
-          const node = {
-            roundNum: activePlayer.history.length + 1,
-            throws: liveThrows,
-            roundScore: result.pointsThisTurn,
-            cricketMarks: result.marks,
-            cricketScore: result.score,
-          };
-          const mp = players.map((p, i) =>
-            i === activePlayerIndex
-              ? { ...p, cricketMarks: result.marks, cricketScore: result.score, history: [node, ...p.history] }
-              : p,
-          );
-          setPlayers(mp);
-          const others = playerCount === 1 ? [] : mp.filter((_, i) => i !== activePlayerIndex);
-          if (checkCricketWinner(mp[activePlayerIndex], others)) {
-            setConfirmStage("gameover");
-            setCurrentThrowsImmediate([]);
-            setEditingThrowIndex(null);
-            playSound("victory");
-            setWinner({
-              ...mp[activePlayerIndex],
-              cricketResult: true,
-              isDraw: false,
-              scores: (playerCount === 1 ? [mp[activePlayerIndex]] : mp).map((p) => ({
-                name: p.name,
-                score: p.cricketScore,
-              })),
-            });
-          } else {
-            // ラウンド上限チェック（maxRounds が設定されている場合。01と同じ上限設定を共有）
-            const nextRoundNum = mp[activePlayerIndex].history.length;
-            if (maxRounds !== null && isLastPlayer && nextRoundNum >= maxRounds) {
-              // 全プレイヤーが規定ラウンドを終えた → クリケット得点が高い方が勝ち
-              const relevant = playerCount === 1 ? [mp[0]] : mp.slice(0, 2);
-              const maxScore = Math.max(...relevant.map((p) => p.cricketScore));
-              const winners = relevant.filter((p) => p.cricketScore === maxScore);
-              const isDraw = winners.length > 1;
-              const w = isDraw ? { ...winners[0], id: null } : winners[0];
-              setConfirmStage("gameover");
-              setCurrentThrowsImmediate([]);
-              setEditingThrowIndex(null);
-              playSound("victory");
-              setWinner({
-                ...w,
-                cricketResult: true,
-                isDraw,
-                scores: relevant.map((p) => ({ name: p.name, score: p.cricketScore })),
-              });
-            } else {
-              playSound("click");
-              setConfirmStage("next");
-            }
-          }
+          playSound("victory");
+          setWinner(result.winner);
         } else {
-          // 01ゲーム: useMemoのroundStateに依存せず、currentThrowsから直接計算
-          // → 編集モード後のコミットでバースト判定がズレる問題を根本解決
-          const normOut = normalizeOutMode(outMode);
-          const freshState = getRoundState(
-            activePlayer.remainingScore,
-            liveThrows,
-            normOut,
-          );
-          const nextRem = freshState.remainingScore;
-          const node = {
-            roundNum: activePlayer.history.length + 1,
-            throws: liveThrows,
-            roundScore: freshState.subtotal,
-            remainingScore: nextRem,
-            isBust: freshState.isBust,
-          };
-          const mp = players.map((p, i) =>
-            i === activePlayerIndex
-              ? { ...p, remainingScore: nextRem, history: [node, ...p.history] }
-              : p,
-          );
-          setPlayers(mp);
-          if (nextRem === 0) {
-            setConfirmStage("gameover");
-            playSound("victory");
-            setWinner(mp[activePlayerIndex]);
-          } else {
-            // ラウンド上限チェック（maxRounds が設定されている場合）
-            const nextRoundNum = mp[activePlayerIndex].history.length; // 今追加したラウンド数
-            if (maxRounds !== null && isLastPlayer && nextRoundNum >= maxRounds) {
-              // 全プレイヤーが規定ラウンドを終えた → 残り点数が少ない方が勝ち
-              const relevant = playerCount === 1 ? [mp[0]] : mp.slice(0, 2);
-              const minRem = Math.min(...relevant.map(p => p.remainingScore));
-              const winners = relevant.filter(p => p.remainingScore === minRem);
-              const isDraw = winners.length > 1;
-              const w = isDraw ? { ...winners[0], id: null } : winners[0];
-              setConfirmStage("gameover");
-              playSound("victory");
-              setWinner({ ...w, o1RoundResult: true, isDraw, scores: relevant.map(p => ({ name: p.name, score: p.remainingScore })) });
-            } else {
-              playSound("click");
-              setConfirmStage("next");
-            }
-          }
+          playSound("click");
+          setConfirmStage("next");
         }
       } else if (confirmStage === "next") {
         // winner確定後のNEXT押下は無視（二重チェック）
