@@ -3,7 +3,7 @@
 //
 // 更新方針: CACHE_NAME のバージョンを上げると、新しいSWがインストールされ、
 // 古いキャッシュは activate 時に破棄される。ファイルを更新したら CACHE_VERSION を上げること。
-const CACHE_VERSION = "v26"; // v26: Phase 3-D - Human側をcomputeRoundResult(round-commit.js)経由に変更
+const CACHE_VERSION = "v27"; // v27: CPUの投擲を1投ずつ表示するように変更(計算ロジックは無変更)
 const CACHE_NAME = `pdcs-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [

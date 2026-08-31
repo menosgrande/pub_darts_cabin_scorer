@@ -420,36 +420,29 @@ GAME SETUPモーダル上部の「📊 通算成績を見る」ボタンから�
 
 ---
 
-### 6. CPUを1投ずつ投げるように変更する（未着手・次にやる候補）
+### 6. CPUを1投ずつ投げるように変更する（実装済み）
 
-**現状**: `useEffect([isCpuTurn])` 内で `setTimeout` を1本だけ使い、900〜1600msのランダム待機の後、`cpuPlayTurn`/`cpuPlayCricketTurn` が**3投分をまとめて計算**し、そのまま`players`へ一括コミットしている（該当箇所: `app-main.js` の「── CPU自動投擲 ──」コメント以降、`cpuCommitRef`を使っているuseEffect）。そのため画面上は「一定時間待った後、3本のマーカーが同時に盤面へ現れる」ように見える。人間側は`currentThrows`に1投ずつ追加されて①②③のマーカーが順番に増えていく（`commitThrow`参照）のに対し、CPU側は`currentThrows`を経由せず直接`players`を更新しているため、この見た目の違いが生まれている。
+**旧仕様**: `setTimeout`を1本だけ使い、900〜1600msのランダム待機の後、`cpuPlayTurn`/`cpuPlayCricketTurn`が3投分をまとめて計算し、そのまま`players`へ一括コミットしていた。画面上は「一定時間待った後、3本のマーカーが同時に盤面へ現れる」ように見えていた。
 
-**やりたいこと**: CPUも人間と同じように、1投→少し間を置く→2投目→…という見た目にする。
+**実装内容**: `cpuPlayTurn`/`cpuPlayCricketTurn`自体は変更していない（3投分の計算をまとめて先に行うのはそのまま）。変えたのは「その結果をどう画面に出すか」だけ。
 
-**実装方針（案）**:
-1. `cpuPlayTurn`/`cpuPlayCricketTurn`自体は変更不要（3投分の計算をまとめて先に行い、結果の配列を保持しておくのはそのままでよい）。
-2. コミットのタイミングだけを分割する。`setTimeout`を1本ではなく、投げるダーツの本数ぶん（バーストで早期終了する場合は少ない本数）連続してスケジュールする形にする。イメージ:
-   ```js
-   const scheduleThrow = (i) => {
-     const tid = setTimeout(() => {
-       if (cancelled) return;
-       // cpuThrows[i] だけを currentThrows に追加（commitThrowと同じ形のオブジェクトを渡す）
-       setCurrentThrowsImmediate(prev => [...prev, cpuThrows[i]]);
-       playSound(getHitSoundType(cpuThrows[i]));
-       if (i + 1 < cpuThrows.length) {
-         scheduleThrow(i + 1); // 次の1投を少し間を置いてスケジュール
-       } else {
-         // 3投（またはバーストで打ち切り）完了 → ここで初めてplayersへ確定コミット
-       }
-     }, 400 + Math.random() * 300); // 1投あたりの間隔。既存の900-1600msの合計待機時間とバランスを見て調整
-     cpuCommitRef.current = () => { cancelled = true; clearTimeout(tid); };
-   };
-   ```
-3. **バーストの扱いに注意**: 現状は3投まとめて計算してからバースト判定している可能性が高い（`cpuPlayTurn`の内部実装を要確認）。1投ずつ表示する場合、2投目でバーストしたら3投目は投げずにそこでターン終了、という見た目にする必要がある（実際のダーツと同じ挙動）。`cpuThrows`配列の何投目でバーストが起きるかを`cpuPlayTurn`側が返す（または`getRoundState`で都度チェックする）ようにしておくと安全。
-4. **PREV/キャンセルとの整合性**: `cancelCpuTimer()`（CPU思考中のPREV対策で以前バグ修正した箇所）が、1投ずつのスケジューリングでも正しく全ての保留中`setTimeout`を止められるようにする。`cpuCommitRef.current`に「今スケジュールされている次のタイマーを止める関数」を都度上書きしておけば、既存の仕組みをほぼそのまま流用できるはず。
-5. 全投完了後、最終的に`players`へ確定コミットする処理（ラウンド上限チェック・勝敗判定・クリケットの勝利判定など）は既存のロジックをそのまま使ってよい（`currentThrows`が正しく埋まった状態で、今の「3投まとめてコミット」相当の処理を1回呼ぶだけでよいはず）。
+- 初回の「思考時間」待機（900〜1600ms）の後、1投ごとに400〜750msの間隔を空けて`currentThrows`へ1本ずつ追加していく（`setCurrentThrowsImmediate(prev => [...shown, cpuThrows[i]])`）。これで人間側が`commitThrow`で1投ずつ①②③のマーカーを増やしていく見た目と揃った
+- 1投ごとに`getHitSoundType`で対応する効果音を鳴らす（`handleBoardClick`が人間の投擲時に行っているのと同じ関数）
+- **確定コミット（`computeRoundResult`呼び出し）は全投擲の表示が終わった後に1回だけ行う**。Phase 3-Dで共通化した`computeRoundResult`の呼び出し内容自体は変更していない（引数も同一）。「1投ずつ画面に見せるが、ゲームの確定Stateへのコミットは3投単位のまま」という設計方針を採用した
+- バーストで早期終了する場合（`cpuThrows`が3投未満で終わっている場合）も、`cpuPlayTurn`が返す配列の長さがそのまま表示するダーツの本数になるため、追加の分岐は不要だった
+- `cpuCommitRef`のキャンセル機構は、タイマーIDを保持する変数(`currentTid`)を`let`で宣言し、`setTimeout`を呼ぶたびに再代入する形にした。`cpuCommitRef.current`に設定する関数は1回しか作らないが、クロージャ経由で常に最新の`currentTid`を参照するため、1投目〜3投目のどのタイミングで`cancelCpuTimer()`が呼ばれても正しく現在アクティブなタイマーだけをキャンセルできる（PREV操作等での中断に対応済み。既存の`cancelCpuTimer`関数自体は無変更）
 
-**優先度**: 見た目の改善であり機能追加ではないため急ぐ必要はないが、次にCPU周りを触るタイミングでまとめてやるのが効率的。
+**異常系の確認（実コード読解、いずれも問題なし）**:
+- 1投目/2投目後のキャンセル: `currentTid`が次の投擲用タイマーを指しているため正しく中断される（`cancelled`フラグによる二重ガードもあり）
+- 3投目後: 最後のダートでは`scheduleThrow`を再帰せず`commitResult`へ直行するため、余計なタイマーは生成されない。CPUターン終了で`isCpuTurn`がfalseになりEffectの依存が変わると、Reactが自動でcleanup（`cpuCommitRef.current = null`）を呼ぶため、明示的な後始末も不要
+- BUST/OUT（1〜2投目）: `cpuPlayTurn`はバースト/チェックアウトした投擲でthrows配列自体を打ち切る仕様（既存・無変更）。表示ループは`cpuThrows.length`に従うため、実際に投げていない3投目のタイマーはそもそもスケジュールされない。この「配列の長さ＝実際に投げた本数」という契約を`tests/cpu.test.js`に決定論的テストとして追加した（2件）
+- Round Limit: `computeRoundResult`の呼び出し内容は無変更、呼ばれるタイミング（全投擲表示後）が変わっただけなので影響なし
+- PREV/Undo/Clear: `isCpuTurn`によるガード（`handleBoardClick`/`handleKeypadTap`/`handleUndoSingleDart`）は無変更、CPU思考中は従来通り無効のまま。`handleUndoCommittedTurn`（PREV確定時にのみ`cancelCpuTimer()`を呼ぶ既存の安全策）も無変更で、1〜3投目どのタイマー中でも正しく機能する
+- CPU→Human/Human→CPUの`activePlayerIndex`遷移（`setActivePlayerIndex(0)`／`945行目の0↔1`切り替え）はどちらも無変更
+
+**テスト**: 既存169件（変更前基準）→ CPUシーケンス契約の決定論的テスト2件を`tests/cpu.test.js`に追加し171件、全パス。`cpu.test.js`(29件)/`roundCommit.test.js`(18件)/`integration.test.js`(26件)/`fatBullDoubleOut.test.js`(14件)を個別実行でも確認（計85件）。タイマー実装そのもの（`setTimeout`のスケジューリング）はNode環境から直接テストしづらいため、純粋関数として切り出せる`cpuPlayTurn`の「配列長=実投擲数」という契約部分のみをテスト対象とした（依頼にあった「巨大なモックテストは作らない」方針に従った）。
+
+**重要な区別**: 今回実装したのは厳密には「CPUが1投ずつ計算する」ではなく「**CPUの計算結果（3投分まとめて計算済み）を1投ずつ表示する**」。`cpuPlayTurn`/`cpuPlayCricketTurn`自体は従来通り3投分を先にまとめて計算しており、CPUの思考ロジックには一切手を入れていない。そのため今回の変更のリスクは小さく抑えられている。一方、将来カメラ自動採点を実装する際は「ダーツ1本検出→1投確定→次のダーツ待ち→…」という**本当の意味での逐次入力**が必要になる。今回のCPU変更はその前段として、「UI/ゲーム進行上の1投ずつの時間軸」を先に用意したものと位置づける。カメラ側の実装時にこの区別を混同しないこと。
 
 ### 7. その他、直す価値がありそうな点（優先度順）
 
@@ -714,7 +707,13 @@ Phase 1全体で`app-main.js`は3586行→3091行（495行減、目的は行数�
 
 **Phase 2-A（純粋変換処理のみ・完了）**: `makePlayer`/`sanitizeRestoredPlayer`/`migrateSaveData`を`js/game/save-utils.js`へ抽出。いずれもReact StateにもlocalStorageにも直接依存しない純粋関数。`tests/saveUtils.test.js`でカバー（makePlayerの各パターン、sanitizeRestoredPlayerの欠損値/不正値/型不一致、migrateSaveDataのバージョン変換/未来バージョン拒否、計16件追加）。
 
-**Phase 2-B（State/Ref依存部分・意図的に保留）**: 自動保存Effect・`handleRestoreSave`・`clearSavedGame`・`refreshRestorableSave`・`setCurrentThrowsImmediate`は`app-main.js`に残したまま。理由は、これらがapp-main.jsのstateのほぼ全部（27個中）に直接触れており、Phase 1/2-Aのような「低結合な部分をそのまま移す」という手法が通用しないため。無理に`useSaveRestore()`のようなHookへ切り出すと、「27個のstate setterを引数で受け取るだけの関数」になり複雑さの削減にならない。`hasRestorableSave`が複数箇所（自動保存Effect成功時/`refreshRestorableSave`/`handleRestoreSave`）から独立に書き込まれている点、`setCurrentThrowsImmediate`が`currentThrowsRef`とstateの二重書き込み同期を担っている点も、今回のPhaseでは触らず現状維持とした。これらは「Save/Restoreの分離」ではなく「Source of Truthのアーキテクチャ再設計（`useReducer`化を含む）」という別の設計問題であり、今の27個のuseStateを見て安易にuseReducer化を判断すべきではない（useReducerはstate遷移を整理するための道具であり、useStateの数が多いことそのものが導入理由にはならない）。将来Source of Truthを再設計するタイミングで、あらためて評価する。
+**Phase 2-B（State/Ref依存部分・意図的に現状維持、監査済み）**: 自動保存Effect・`handleRestoreSave`・`clearSavedGame`・`refreshRestorableSave`・`setCurrentThrowsImmediate`は`app-main.js`に残したまま。理由は、これらがapp-main.jsのstateのほぼ全部（27個中）に直接触れており、Phase 1/2-Aのような「低結合な部分をそのまま移す」という手法が通用しないため。無理に`useSaveRestore()`のようなHookへ切り出すと、「27個のstate setterを引数で受け取るだけの関数」になり複雑さの削減にならない。これらは「Save/Restoreの分離」ではなく「Source of Truthのアーキテクチャ再設計（`useReducer`化を含む）」という別の設計問題であり、今の27個のuseStateを見て安易にuseReducer化を判断すべきではない（useReducerはstate遷移を整理するための道具であり、useStateの数が多いことそのものが導入理由にはならない）。将来Source of Truthを再設計するタイミングで、あらためて評価する。
+
+**Phase 2-B監査（コード変更なし・完了）**: 上記で「気になる点」として挙げていた2つを、実コードを1箇所ずつ確認して監査した。**いずれも実害のあるバグは見つからなかった**:
+- `hasRestorableSave`（複数箇所書き込み）: `refreshRestorableSave`（自己完結、6箇所）、`clearSavedGame`（1箇所）、自動保存Effect成功時（1箇所）、`handleRestoreSave`（3箇所）の計10箇所を全て確認。いずれも「今localStorageに有効な復元可能セーブがあるか」という同じ意味論に一貫して従っており、矛盾する値がセットされる経路はない。`handleRestoreSave`成功時の書き込み（復元開始時点で既にtrueのはず）は若干冗長だが誤りではない
+- `setCurrentThrowsImmediate`（Ref二重書き込み）: `currentThrows`への書き込み全15箇所が例外なく`setCurrentThrowsImmediate`経由になっており、直接`setCurrentThrows()`を呼ぶバイパスは存在しない（唯一の直接呼び出しはラッパー自身の内部実装）。加えて`currentThrows`変化時に`currentThrowsRef.current`を再同期する`useEffect`が独立してあるが、同じ値を再セットするだけの冗長な安全網でバグではない
+
+この監査結果により、Phase 2-Bは「保留（未確認のリスクを抱えたまま先送り）」ではなく「監査済みの上で意図的に現状維持」という位置づけに更新する。将来Source of Truthを再設計する際は、この監査結果（各書き込み箇所の意味論と、バイパスが存在しないこと）を出発点にできる。
 
 Phase 2-Aで`app-main.js`は3091行→3014行（77行減）。各Phase完了後に`npm test`と構文チェックを実施し、ゲームロジック・Source of Truth・Ref同期に変更がないことを確認済み。
 
